@@ -1,4 +1,4 @@
-module prac
+module SyC
 
 go 1.23.6
 

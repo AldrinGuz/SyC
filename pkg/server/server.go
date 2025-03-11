@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"prac/pkg/api"
-	"prac/pkg/store"
+	"SyC/pkg/api"
+	"SyC/pkg/store"
 )
 
 // server encapsula el estado de nuestro servidor
@@ -44,7 +44,7 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(":8080", mux) //Modificar para que se levante con HTTPS
 
 	return err
 }
@@ -111,7 +111,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 	}
 
 	// Almacenamos la contraseña en el namespace 'auth' (clave=nombre, valor=contraseña)
-	if err := s.db.Put("auth", []byte(req.Username), []byte(req.Password)); err != nil {
+	if err := s.db.Put("auth", []byte(req.Username), []byte(req.Password)); err != nil { // Esto se ha demodificar para que se añada la sal y la contraseña haseada
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
@@ -136,7 +136,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 	}
 
 	// Comparamos
-	if string(storedPass) != req.Password {
+	if string(storedPass) != req.Password { //Comparar con la contraseña haseada tomando la contraseña y añadiendo la sal
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 

@@ -1,5 +1,5 @@
 /*
-'prac' es una base para el desarrollo de prácticas en clase con Go.
+'SyC' es una base para el desarrollo de prácticas en clase con Go.
 
 se puede compilar con "go build" en el directorio donde resida main.go
 
@@ -16,9 +16,9 @@ import (
 	"os"
 	"time"
 
-	"prac/pkg/client"
-	"prac/pkg/server"
-	"prac/pkg/ui"
+	"SyC/pkg/client"
+	"SyC/pkg/server"
+	"SyC/pkg/ui"
 )
 
 func main() {
