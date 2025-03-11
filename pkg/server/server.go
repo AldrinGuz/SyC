@@ -3,15 +3,19 @@
 package server
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 
-	"SyC/pkg/api"
+	"SyC/pkg/api" // Importamos el paquete api
 	"SyC/pkg/store"
 )
 
@@ -44,7 +48,7 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServe(":8080", mux) //Modificar para que se levante con HTTPS
+	err = http.ListenAndServe(":8080", mux) // Modificar para que se levante con HTTPS
 
 	return err
 }
@@ -92,9 +96,51 @@ func (s *server) generateToken() string {
 	return fmt.Sprintf("token_%d", id)
 }
 
+// encrypt cifra los datos utilizando AES en modo CTR.
+func encrypt(key, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		fmt.Println("erro1")
+		fmt.Println(err.Error())
+		return nil, err
+	}
+
+	// El IV (Initialization Vector) debe ser único, pero no secreto.
+	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		fmt.Println("erro2")
+		return nil, err
+	}
+
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+	fmt.Println("erro3")
+
+	return ciphertext, nil
+}
+
+// decrypt descifra los datos utilizando AES en modo CTR.
+func decrypt(key, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < aes.BlockSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(ciphertext, ciphertext)
+
+	return ciphertext, nil
+}
+
 // registerUser registra un nuevo usuario, si no existe.
-// - Guardamos la contraseña en el namespace 'auth'
-// - Creamos entrada vacía en 'userdata' para el usuario
 func (s *server) registerUser(req api.Request) api.Response {
 	// Validación básica
 	if req.Username == "" || req.Password == "" {
@@ -110,8 +156,15 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "El usuario ya existe"}
 	}
 
-	// Almacenamos la contraseña en el namespace 'auth' (clave=nombre, valor=contraseña)
-	if err := s.db.Put("auth", []byte(req.Username), []byte(req.Password)); err != nil { // Esto se ha demodificar para que se añada la sal y la contraseña haseada
+	// Ciframos la contraseña antes de almacenarla
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar una clave segura de 32 bytes
+	encryptedPassword, err := encrypt(key, []byte(req.Password))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar la contraseña"}
+	}
+
+	// Almacenamos la contraseña cifrada en el namespace 'auth'
+	if err := s.db.Put("auth", []byte(req.Username), encryptedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
@@ -129,14 +182,21 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Recogemos la contraseña guardada en 'auth'
-	storedPass, err := s.db.Get("auth", []byte(req.Username))
+	// Recogemos la contraseña cifrada guardada en 'auth'
+	encryptedPassword, err := s.db.Get("auth", []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
-	// Comparamos
-	if string(storedPass) != req.Password { //Comparar con la contraseña haseada tomando la contraseña y añadiendo la sal
+	// Desciframos la contraseña almacenada
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	decryptedPassword, err := decrypt(key, encryptedPassword)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al descifrar la contraseña"}
+	}
+
+	// Comparamos la contraseña descifrada con la proporcionada
+	if string(decryptedPassword) != req.Password {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
@@ -234,4 +294,10 @@ func (s *server) isTokenValid(username, token string) bool {
 		return false
 	}
 	return string(storedToken) == token
+}
+
+func main() {
+	if err := Run(); err != nil {
+		log.Fatalf("Error al iniciar el servidor: %v", err)
+	}
 }
