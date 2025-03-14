@@ -40,7 +40,15 @@ func (a *App) Register(name string, pass string) bool {
 }
 
 func (a *App) Logout() bool {
-	return true
+	return c.logoutUser()
+}
+
+func (a *App) UpdateData(data string) bool {
+	return c.updateData(data)
+}
+
+func (a *App) GetData() string {
+	return c.fetchData()
 }
 
 // client estructura interna no exportada que controla
@@ -119,13 +127,13 @@ func (c *client) loginUser(user string, pass string) bool {
 
 // fetchData pide datos privados al servidor.
 // El servidor devuelve la data asociada al usuario logueado.
-func (c *client) fetchData() {
+func (c *client) fetchData() string {
 	fmt.Println("** Obtener datos del usuario **")
 
 	// Chequeo básico de que haya sesión
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
-		return
+		return "/Error: 401 Unauthorized*"
 	}
 
 	// Hacemos la request con ActionFetchData
@@ -141,16 +149,19 @@ func (c *client) fetchData() {
 	// Si fue exitoso, mostramos la data recibida
 	if res.Success {
 		fmt.Println("Tus datos:", res.Data)
+		return res.Data
+	} else {
+		return "/Error: 503 Service Unavailable*"
 	}
 }
 
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
-func (c *client) updateData(datos string) {
+func (c *client) updateData(datos string) bool {
 	fmt.Println("** Actualizar datos del usuario **")
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
-		return
+		return false
 	}
 
 	// Leemos la nueva Data
@@ -166,6 +177,13 @@ func (c *client) updateData(datos string) {
 
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
+
+	if res.Success {
+		fmt.Println("Datos enviados:", datos)
+		return true
+	} else {
+		return false
+	}
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,
