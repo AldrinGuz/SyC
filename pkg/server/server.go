@@ -48,7 +48,7 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServe(":8080", mux) // Modificar para que se levante con HTTPS
+	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux) // Modificar para que se levante con HTTPS
 
 	return err
 }
@@ -100,7 +100,6 @@ func (s *server) generateToken() string {
 func encrypt(key, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		fmt.Println("erro1")
 		fmt.Println(err.Error())
 		return nil, err
 	}
@@ -109,13 +108,11 @@ func encrypt(key, plaintext []byte) ([]byte, error) {
 	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
 	iv := ciphertext[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		fmt.Println("erro2")
 		return nil, err
 	}
 
 	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-	fmt.Println("erro3")
 
 	return ciphertext, nil
 }
@@ -166,6 +163,16 @@ func (s *server) registerUser(req api.Request) api.Response {
 	// Almacenamos la contraseña cifrada en el namespace 'auth'
 	if err := s.db.Put("auth", []byte(req.Username), encryptedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
+	}
+
+	// Almacenamos la clave privada cifrada en el namespace 'prkey'
+	if err := s.db.Put("prkey", []byte(req.Username), []byte(req.PriKey)); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar clave privada"}
+	}
+
+	// Almacenamos la clave publica cifrada en el namespace 'pukey'
+	if err := s.db.Put("pukey", []byte(req.Username), []byte(req.PubKey)); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar clave publica"}
 	}
 
 	// Creamos una entrada vacía para los datos en 'userdata'

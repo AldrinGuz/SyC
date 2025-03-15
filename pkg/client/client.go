@@ -3,16 +3,23 @@
 package client
 
 import (
+	"SyC/pkg/api"
+	"SyC/pkg/ui"
 	"bytes"
+	"compress/zlib"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha512"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-
-	"SyC/pkg/api"
-	"SyC/pkg/ui"
 )
 
 // client estructura interna no exportada que controla
@@ -114,11 +121,30 @@ func (c *client) registerUser() {
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
 
+	// hash con SHA512 de la contraseña
+	keyClient := sha512.Sum512([]byte(password))
+	keyLogin := keyClient[:32]  // una mitad para el login (256 bits)
+	keyData := keyClient[32:64] // la otra para los datos (256 bits)
+
+	// generamos un par de claves (privada, pública) para el servidor
+	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
+	chk(err)
+	pkClient.Precompute() // aceleramos su uso con un precálculo
+
+	pkJSON, err := json.Marshal(&pkClient) // codificamos con JSON
+	chk(err)
+
+	keyPub := pkClient.Public()           // extraemos la clave pública por separado
+	pubJSON, err := json.Marshal(&keyPub) // y codificamos con JSON
+	chk(err)
+
 	// Enviamos la acción al servidor
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
 		Username: username,
-		Password: password,
+		Password: encode64(keyLogin),
+		PubKey:   encode64(compress(pubJSON)),
+		PriKey:   encode64(encrypt(compress(pkJSON), keyData)),
 	})
 
 	// Mostramos resultado
@@ -132,7 +158,7 @@ func (c *client) registerUser() {
 		loginRes := c.sendRequest(api.Request{
 			Action:   api.ActionLogin,
 			Username: username,
-			Password: password,
+			Password: encode64(keyLogin),
 		})
 		if loginRes.Success {
 			c.currentUser = username
@@ -152,10 +178,14 @@ func (c *client) loginUser() {
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
 
+	// hash con SHA512 de la contraseña
+	keyClient := sha512.Sum512([]byte(password))
+	keyLogin := keyClient[:32] // una mitad para el login (256 bits)
+
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionLogin,
 		Username: username,
-		Password: password,
+		Password: encode64(keyLogin),
 	})
 
 	fmt.Println("Éxito:", res.Success)
@@ -254,7 +284,14 @@ func (c *client) logoutUser() {
 // devuelve la respuesta decodificada. Se usa para todas las acciones.
 func (c *client) sendRequest(req api.Request) api.Response {
 	jsonData, _ := json.Marshal(req)
-	resp, err := http.Post("http://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData)) //Meter el http.Transport y el InsecureSkip
+
+	// Configurar transporte con TLS (permitiendo certificados autofirmados)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	// Usar el cliente con TLS
+	resp, err := client.Post("https://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Println("Error al contactar con el servidor:", err)
 		return api.Response{Success: false, Message: "Error de conexión"}
@@ -266,4 +303,36 @@ func (c *client) sendRequest(req api.Request) api.Response {
 	var res api.Response
 	_ = json.Unmarshal(body, &res)
 	return res
+}
+
+// función para comprobar errores (ahorra escritura)
+func chk(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+// función para cifrar (con AES en este caso), adjunta el IV al principio
+func encrypt(data, key []byte) (out []byte) {
+	out = make([]byte, len(data)+16)    // reservamos espacio para el IV al principio
+	rand.Read(out[:16])                 // generamos el IV
+	blk, err := aes.NewCipher(key)      // cifrador en bloque (AES), usa key
+	chk(err)                            // comprobamos el error
+	ctr := cipher.NewCTR(blk, out[:16]) // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out[16:], data)    // ciframos los datos
+	return
+}
+
+// función para codificar de []bytes a string (Base64)
+func encode64(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
+}
+
+// función para comprimir
+func compress(data []byte) []byte {
+	var b bytes.Buffer      // b contendrá los datos comprimidos (tamaño variable)
+	w := zlib.NewWriter(&b) // escritor que comprime sobre b
+	w.Write(data)           // escribimos los datos
+	w.Close()               // cerramos el escritor (buffering)
+	return b.Bytes()        // devolvemos los datos comprimidos
 }

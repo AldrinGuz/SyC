@@ -6,7 +6,7 @@ import * as App from '../wailsjs/go/main/App';
 
 document.querySelector('#app').innerHTML = `
 
-    <div class="result" id="result">Please enter your name below 👇</div>
+    <div class="result" id="result">Haga login o registrese en nuestra app.</div>
       <div class="input-box" id="input">
         <input class="input" id="name" type="text" autocomplete="off" />
         <input class="input" id="password" type="password" />
@@ -83,7 +83,7 @@ window.logout = function(){
         App.Logout().then((result)=>{
             if(result==true){
                 document.querySelector('#app').innerHTML = `
-                    <div class="result" id="result">Please enter your name below 👇</div>
+                    <div class="result" id="result">Haga login o registrese en nuestra app.</div>
                     <div class="input-box" id="input">
                         <input class="input" id="name" type="text" autocomplete="off" />
                         <input class="input" id="password" type="password" />
@@ -140,6 +140,7 @@ window.getData = function(){
 window.panelRegister = function(){
     document.querySelector('#app').innerHTML = `
         <div class="result" id="result">Registrar</div>
+        <p>Por favor, complete todos los campos 👇</p>
         <div class="input-box" id="input">
             <input class="input" id="name" type="text" autocomplete="off" />
             <input class="input" id="password" type="password" autocomplete="off" />
@@ -150,7 +151,7 @@ window.panelRegister = function(){
 }
 window.panelInicio = function(){
     document.querySelector('#app').innerHTML = `
-    <div class="result" id="result">Please enter your name below 👇</div>
+    <div class="result" id="result">Haga login o registrese en nuestra app.</div>
       <div class="input-box" id="input">
         <input class="input" id="name" type="text" autocomplete="off" />
         <input class="input" id="password" type="password" />

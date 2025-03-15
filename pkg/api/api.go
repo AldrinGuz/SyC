@@ -17,6 +17,8 @@ type Request struct {
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`
 	Data     string `json:"data,omitempty"`
+	PubKey   string `json:"pubKey,omitempty"`
+	PriKey   string `json:"priKey,omitempty"`
 }
 
 type Response struct {
