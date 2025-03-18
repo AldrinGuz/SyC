@@ -15,8 +15,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"SyC/pkg/api" // Importamos el paquete api
+	"SyC/pkg/api"
 	"SyC/pkg/store"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // server encapsula el estado de nuestro servidor
@@ -154,30 +156,36 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "El usuario ya existe"}
 	}
 
-	// Ciframos la contraseña antes de almacenarla
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar una clave segura de 32 bytes
-	encryptedPassword, err := encrypt(key, []byte(req.Password))
+	// Generar un salt y hashear la contraseña
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return api.Response{Success: false, Message: "Error al cifrar la contraseña"}
+		return api.Response{Success: false, Message: "Error al hashear la contraseña"}
 	}
 
-	// Almacenamos la contraseña cifrada en el namespace 'auth'
-	if err := s.db.Put("auth", []byte(req.Username), encryptedPassword); err != nil {
+	// Encriptar el nombre de usuario
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar una clave segura de 32 bytes
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	// Almacenamos la contraseña hasheada en el namespace 'auth'
+	if err := s.db.Put("auth", encryptedUsername, hashedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
 	// Almacenamos la clave privada cifrada en el namespace 'prkey'
-	if err := s.db.Put("prkey", []byte(req.Username), []byte(req.PriKey)); err != nil {
+	if err := s.db.Put("prkey", encryptedUsername, []byte(req.PriKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave privada"}
 	}
 
 	// Almacenamos la clave publica cifrada en el namespace 'pukey'
-	if err := s.db.Put("pukey", []byte(req.Username), []byte(req.PubKey)); err != nil {
+	if err := s.db.Put("pukey", encryptedUsername, []byte(req.PubKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave publica"}
 	}
 
 	// Creamos una entrada vacía para los datos en 'userdata'
-	if err := s.db.Put("userdata", []byte(req.Username), []byte("")); err != nil {
+	if err := s.db.Put("userdata", encryptedUsername, []byte("")); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
 
@@ -190,27 +198,27 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Recogemos la contraseña cifrada guardada en 'auth'
-	encryptedPassword, err := s.db.Get("auth", []byte(req.Username))
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	// Recogemos la contraseña hasheada guardada en 'auth'
+	hashedPassword, err := s.db.Get("auth", encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
-	// Desciframos la contraseña almacenada
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
-	decryptedPassword, err := decrypt(key, encryptedPassword)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al descifrar la contraseña"}
-	}
-
-	// Comparamos la contraseña descifrada con la proporcionada
-	if string(decryptedPassword) != req.Password {
+	// Comparamos la contraseña proporcionada con la contraseña hasheada
+	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(req.Password)); err != nil {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
 	// Generamos un nuevo token, lo guardamos en 'sessions'
 	token := s.generateToken()
-	if err := s.db.Put("sessions", []byte(req.Username), []byte(token)); err != nil {
+	if err := s.db.Put("sessions", encryptedUsername, []byte(token)); err != nil {
 		return api.Response{Success: false, Message: "Error al crear sesión"}
 	}
 
@@ -223,20 +231,34 @@ func (s *server) fetchData(req api.Request) api.Response {
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
-	if !s.isTokenValid(req.Username, req.Token) {
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
 	// Obtenemos los datos asociados al usuario desde 'userdata'
-	rawData, err := s.db.Get("userdata", []byte(req.Username))
+	rawData, err := s.db.Get("userdata", encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+	}
+
+	// Desencriptar los datos del usuario
+	decryptedData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
 	}
 
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    string(rawData),
+		Data:    string(decryptedData),
 	}
 }
 
@@ -247,12 +269,26 @@ func (s *server) updateData(req api.Request) api.Response {
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
-	if !s.isTokenValid(req.Username, req.Token) {
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
+	// Encriptar los datos del usuario antes de almacenarlos
+	encryptedData, err := encrypt(key, []byte(req.Data))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al encriptar los datos del usuario"}
+	}
+
 	// Escribimos el nuevo dato en 'userdata'
-	if err := s.db.Put("userdata", []byte(req.Username), []byte(req.Data)); err != nil {
+	if err := s.db.Put("userdata", encryptedUsername, encryptedData); err != nil {
 		return api.Response{Success: false, Message: "Error al actualizar datos del usuario"}
 	}
 
@@ -265,12 +301,20 @@ func (s *server) logoutUser(req api.Request) api.Response {
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
-	if !s.isTokenValid(req.Username, req.Token) {
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
 	// Borramos la entrada en 'sessions'
-	if err := s.db.Delete("sessions", []byte(req.Username)); err != nil {
+	if err := s.db.Delete("sessions", encryptedUsername); err != nil {
 		return api.Response{Success: false, Message: "Error al cerrar sesión"}
 	}
 
@@ -280,13 +324,19 @@ func (s *server) logoutUser(req api.Request) api.Response {
 // userExists comprueba si existe un usuario con la clave 'username'
 // en 'auth'. Si no se encuentra, retorna false.
 func (s *server) userExists(username string) (bool, error) {
-	_, err := s.db.Get("auth", []byte(username))
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
+	encryptedUsername, err := encrypt(key, []byte(username))
+	if err != nil {
+		return false, err
+	}
+
+	_, err = s.db.Get("auth", encryptedUsername)
 	if err != nil {
 		// Si no existe namespace o la clave:
 		if strings.Contains(err.Error(), "bucket no encontrado: auth") {
 			return false, nil
 		}
-		if err.Error() == "clave no encontrada: "+username {
+		if err.Error() == "clave no encontrada: "+string(encryptedUsername) {
 			return false, nil
 		}
 		return false, err
@@ -296,8 +346,8 @@ func (s *server) userExists(username string) (bool, error) {
 
 // isTokenValid comprueba que el token almacenado en 'sessions'
 // coincida con el token proporcionado.
-func (s *server) isTokenValid(username, token string) bool {
-	storedToken, err := s.db.Get("sessions", []byte(username))
+func (s *server) isTokenValid(username []byte, token string) bool {
+	storedToken, err := s.db.Get("sessions", username)
 	if err != nil {
 		return false
 	}
