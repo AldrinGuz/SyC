@@ -92,8 +92,9 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 
 // generateToken crea un token único incrementando un contador interno (inseguro)
 func (s *server) generateToken() string {
-	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic es necesario al haber paralelismo en las peticiones HTTP.
-	return fmt.Sprintf("token_%d", id)
+	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic es necesario al haber paralelismo en las peticiones HTTP.//Texto suficientemente largo tiene que tener una fecha de caducidad, para ello guardamos la fecha en la que se guarda el token
+	return fmt.Sprintf("token_%d", id)        //Cada vez que hace una accion tiene que comprovar el token del cliente si no lo tiene tiene que mandar un mensaje de error
+	//Se valida comprovando que es el mismo token y que esta dentro del tiempo limite
 }
 
 // encrypt cifra los datos utilizando AES en modo CTR.
