@@ -5,10 +5,8 @@ package server
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -109,10 +107,10 @@ func encrypt(key, plaintext []byte) ([]byte, error) {
 
 	// El IV (Initialization Vector) debe ser único, pero no secreto.
 	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+	iv := ciphertext[:aes.BlockSize] //posible erro
+	/*if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return nil, err
-	}
+	}*/
 
 	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)

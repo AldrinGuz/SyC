@@ -16,7 +16,6 @@ import (
 	"os"
 	"time"
 
-	"SyC/pkg/client"
 	"SyC/pkg/server"
 	"SyC/pkg/ui"
 )
@@ -44,5 +43,8 @@ func main() {
 
 	// Inicia cliente.
 	log.Println("Iniciando cliente...")
-	client.Run()
+	//client.Run()
+	for {
+
+	}
 }
