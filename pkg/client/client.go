@@ -285,7 +285,7 @@ func (c *client) logoutUser() {
 func (c *client) sendRequest(req api.Request) api.Response {
 	jsonData, _ := json.Marshal(req)
 
-	// Configurar transporte con TLS (permitiendo certificados autofirmados)
+	// Configurar transporte con TLS (permitiendo certificados autofirmados).
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
