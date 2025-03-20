@@ -44,7 +44,5 @@ func main() {
 	// Inicia cliente.
 	log.Println("Iniciando cliente...")
 	//client.Run()
-	for {
 
-	}
 }
