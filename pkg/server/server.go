@@ -48,7 +48,7 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServeTLS(":10000", "pkg/server/cert.pem", "pkg/server/key.pem", mux) // Modificar para que se levante con HTTPS
+	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux) // Modificar para que se levante con HTTPS
 
 	return err
 }

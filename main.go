@@ -12,12 +12,12 @@ estudiantes: 	Ignacio Guarner Sala, Aldrin B Guzmán Figueroa
 package main
 
 import (
+	"SyC/pkg/client"
+	"SyC/pkg/server"
+	"SyC/pkg/ui"
 	"log"
 	"os"
 	"time"
-
-	"SyC/pkg/server"
-	"SyC/pkg/ui"
 )
 
 func main() {
@@ -43,6 +43,6 @@ func main() {
 
 	// Inicia cliente.
 	log.Println("Iniciando cliente...")
-	//client.Run()
+	client.Run()
 
 }
