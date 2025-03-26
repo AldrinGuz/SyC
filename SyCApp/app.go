@@ -258,7 +258,7 @@ func (c *client) sendRequest(req api.Request) api.Response {
 	}
 	client := &http.Client{Transport: tr}
 	// Usar el cliente con TLS
-	resp, err := client.Post("https://pacientviewer.onrender.com/:10000/api", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := client.Post("https://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Println("Error al contactar con el servidor:", err)
 		return api.Response{Success: false, Message: "Error de conexión"}
