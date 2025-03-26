@@ -88,7 +88,10 @@ window.logout = function(){
     }
 }
 window.updateData = function(){
-    let datos = document.getElementById("data").value;
+    let name = document.getElementById("nombre").value;
+    let surName = document.getElementById("apellidos").value;
+    let id = document.getElementById("ID").value;
+    let datos = JSON.stringify({Name:name,SurName:surName,ID:id})
     let res = document.getElementById("resultData");
     res.remove();
     res = document.createElement("p");
@@ -116,8 +119,13 @@ window.getData = function(){
                 res.innerText = "Ha habido un error con el servidor";
             }else if(result === "/Error: 401 Unauthorized*"){
                 res.innerText = "Ha habido un error interno, reinicia la aplicación";
-            }else{
+            }else if(result ==="/Error: Fallo en la conversión de datos"){
+                res.innerText = "Ha habido un error en la aplicación. Contacte con el soporte técnico"
+            }
+            else{
                 res.innerText = "Tus datos: " + result;
+                let y = JSON.parse(result)
+                res.innerText = "Tus datos: " + y.Name; 
             }
         })
     }catch(err){
@@ -158,8 +166,12 @@ window.panel = function(tipo){
             <div class="result" id="result">Bienvenido</div>
             <div class="input-box" id="input">
                 <p>Estas dentro del menu principal</p>
-                <label for="data">Datos:</label>
-                <input class="input" id="data" type="text" autocomplete="off" />
+                <label for="nombre">Nombre:</label>
+                <input class="input" id="nombre" type="text" autocomplete="off" />
+                <label for="apellidos">Apellidos:</label>
+                <input class="input" id="apellidos" type="text" autocomplete="off" />
+                <label for="ID">NIE:</label>
+                <input class="input" id="ID" type="text" autocomplete="off" />
                 <button class="btn" onclick="getData()">Datos</button>
                 <button class="btn" onclick="updateData()">Actualizar</button>
                 <button class="btn" onclick="logout()">Desconectar</button>

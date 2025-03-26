@@ -12,18 +12,24 @@ const (
 
 // Request y Response como antes
 type Request struct {
-	Action   string `json:"action"`
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
-	Token    string `json:"token,omitempty"`
-	Data     string `json:"data,omitempty"`
-	PubKey   string `json:"pubKey,omitempty"`
-	PriKey   string `json:"priKey,omitempty"`
+	Action   string     `json:"action"`
+	Username string     `json:"username"`
+	Password string     `json:"password,omitempty"`
+	Token    string     `json:"token,omitempty"`
+	Data     ClinicData `json:"data,omitempty"`
+	PubKey   string     `json:"pubKey,omitempty"`
+	PriKey   string     `json:"priKey,omitempty"`
 }
 
 type Response struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Token   string `json:"token,omitempty"`
-	Data    string `json:"data,omitempty"`
+	Success bool       `json:"success"`
+	Message string     `json:"message"`
+	Token   string     `json:"token,omitempty"`
+	Data    ClinicData `json:"data,omitempty"`
+}
+
+type ClinicData struct {
+	Name     string
+	SureName string
+	ID       int
 }

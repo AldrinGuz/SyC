@@ -263,7 +263,10 @@ func (s *server) fetchData(req api.Request) api.Response {
 
 	// Transformamos los datos
 	var sData api.ClinicData
-	_ = json.Unmarshal(decryptedData, &sData)
+	err = json.Unmarshal(decryptedData, &sData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error " + err.Error()}
+	}
 
 	return api.Response{
 		Success: true,

@@ -179,8 +179,15 @@ func (c *client) fetchData() string {
 
 	// Si fue exitoso, mostramos la data recibida
 	if res.Success {
-		fmt.Println("Tus datos:", res.Data)
-		return res.Data
+		fmt.Println("Tus datos:")
+		fmt.Println("Nombre: ", res.Data.Name)
+		fmt.Println("Apellidos: ", res.Data.SureName)
+		fmt.Println("ID: ", res.Data.ID)
+		jData, err := json.Marshal(res.Data)
+		if err != nil {
+			return "/Error: Fallo en la conversión de datos"
+		}
+		return string(jData)
 	} else {
 		return "/Error: 503 Service Unavailable*"
 	}
@@ -196,8 +203,8 @@ func (c *client) updateData(datos string) bool {
 	}
 
 	// Leemos la nueva Data
-	newData := datos
-
+	var newData api.ClinicData
+	_ = json.Unmarshal([]byte(datos), &newData)
 	// Enviamos la solicitud de actualización
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionUpdateData,
