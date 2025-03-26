@@ -250,9 +250,8 @@ func (s *server) fetchData(req api.Request) api.Response {
 	// Si no hay datos
 	if string(rawData) == "" {
 		return api.Response{
-			Success: true,
-			Message: "Datos privados de " + req.Username,
-			Data:    string(rawData),
+			Success: false,
+			Message: "No hay datos disponibles",
 		}
 	}
 
@@ -262,10 +261,14 @@ func (s *server) fetchData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
 	}
 
+	// Transformamos los datos
+	var sData api.ClinicData
+	_ = json.Unmarshal(decryptedData, &sData)
+
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    string(decryptedData),
+		Data:    sData,
 	}
 }
 
@@ -289,7 +292,11 @@ func (s *server) updateData(req api.Request) api.Response {
 	}
 
 	// Encriptar los datos del usuario antes de almacenarlos
-	encryptedData, err := encrypt(key, []byte(req.Data))
+	jData, err := json.Marshal(req.Data)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error codificar struct to byte"}
+	}
+	encryptedData, err := encrypt(key, []byte(jData))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al encriptar los datos del usuario"}
 	}

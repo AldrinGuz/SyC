@@ -223,7 +223,10 @@ func (c *client) fetchData() {
 
 	// Si fue exitoso, mostramos la data recibida
 	if res.Success {
-		fmt.Println("Tus datos:", res.Data)
+		fmt.Println("Tus datos:")
+		fmt.Println("Nombre: ", res.Data.Name)
+		fmt.Println("Apellidos: ", res.Data.SureName)
+		fmt.Println("ID: ", res.Data.ID)
 	}
 }
 
@@ -238,7 +241,15 @@ func (c *client) updateData() {
 	}
 
 	// Leemos la nueva Data
-	newData := ui.ReadInput("Introduce el contenido que desees almacenar")
+	nameData := ui.ReadInput("Introduce el nombre del usuario")
+	surNameData := ui.ReadInput("Introduce el apellido del usuario")
+	idData := ui.ReadInt("Introduce el id del usuario")
+
+	newData := api.ClinicData{
+		Name:     nameData,
+		SureName: surNameData,
+		ID:       idData,
+	}
 
 	// Enviamos la solicitud de actualización
 	res := c.sendRequest(api.Request{
