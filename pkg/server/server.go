@@ -3,8 +3,11 @@
 package server
 
 import (
+	"SyC/pkg/api"
+	"SyC/pkg/store"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,9 +15,6 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
-
-	"SyC/pkg/api"
-	"SyC/pkg/store"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -101,16 +101,16 @@ func (s *server) generateToken() string {
 func encrypt(key, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		fmt.Println(err.Error())
-		return nil, err
+		return nil, fmt.Errorf("error al crear cipher: %v", err)
 	}
 
-	// El IV (Initialization Vector) debe ser único, pero no secreto.
+	// Generar IV determinístico basado en el username
+	iv := make([]byte, aes.BlockSize)
+	hash := sha256.Sum256(plaintext)
+	copy(iv, hash[:aes.BlockSize])
+
 	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize] //posible erro
-	/*if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, err
-	}*/
+	copy(ciphertext[:aes.BlockSize], iv)
 
 	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
@@ -245,6 +245,15 @@ func (s *server) fetchData(req api.Request) api.Response {
 	rawData, err := s.db.Get("userdata", encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+	}
+
+	// Si no hay datos
+	if string(rawData) == "" {
+		return api.Response{
+			Success: true,
+			Message: "Datos privados de " + req.Username,
+			Data:    string(rawData),
+		}
 	}
 
 	// Desencriptar los datos del usuario
