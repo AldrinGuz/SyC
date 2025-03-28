@@ -127,7 +127,16 @@ window.updateData = function(){
     }
 }
 window.getData = function(){
-    let res = document.getElementById("resultData");
+    panel('data');
+    let tableExp = document.getElementById("tableExp");
+    tableExp.innerHTML=`
+        <tr>
+            <th>N Exp</th>
+            <th>Nombre</th>
+            <th>Apellidos</th>
+            <th>Edad</th>
+        </tr>
+    `;
     try{
         App.GetData().then((result)=>{
             if (result === "/Error: 503 Service Unavailable*"){
@@ -138,7 +147,14 @@ window.getData = function(){
                 res.innerText = "Ha habido un error en la aplicación. Contacte con el soporte técnico"
             }
             else{
-                res.innerText = "Tus datos: " + result; 
+                let data = JSON.parse(result);
+                console.log("aun continua la sentencia")
+                var node = document.createElement("tr");
+                node.setAttribute("id",data.ID);
+                node.setAttribute("class","temp");
+                node.setAttribute("style","cursor: pointer;");
+                node.innerHTML = "<th>"+data.NumHisClin+"</th>"+"<th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th>";
+                tableExp.appendChild(node);
             }
         })
     }catch(err){
@@ -177,19 +193,48 @@ window.panel = function(tipo){
         case "main":
             document.querySelector('#app').innerHTML = `
             <div class="result" id="result">Bienvenido</div>
+            <p>Estas dentro del menu principal</p>
             <div class="input-box" id="input">
-                <p>Estas dentro del menu principal</p>
+                <button class="btn" onclick="getData()">Datos</button>
+                <button class="btn" onclick="panel('newExp')">Crear Expediente</button>
+                <button class="btn" onclick="logout()">Desconectar</button>
+                <p id="resultData"></p>
+            </div>
+            `;
+            break;
+        case "newExp":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result">Crear expediente</div>
+            <p>Por favor, complete todos los campos 👇</p>
+            <div class="input-box" id="input">
                 <label for="nombre">Nombre:</label>
                 <input class="input" id="nombre" type="text" autocomplete="off" />
                 <label for="apellidos">Apellidos:</label>
                 <input class="input" id="apellidos" type="text" autocomplete="off" />
                 <label for="ID">NIE:</label>
                 <input class="input" id="ID" type="number" autocomplete="off" />
-                <button class="btn" onclick="getData()">Datos</button>
-                <button class="btn" onclick="updateData()">Actualizar</button>
-                <button class="btn" onclick="logout()">Desconectar</button>
+                <button class="btn" onclick="updateData()">Crear</button>
+                <button class="btn" onclick="panel('main')">Volver</button>
                 <p id="resultData"></p>
             </div>
+            `;
+            break;
+        case "data":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result"></div>
+            <p>Todos los pacientes actuales</p>
+            <table id="tableExp">
+                <tr>
+                    <th>N Exp</th>
+                    <th>Nombre</th>
+                    <th>Apellidos</th>
+                    <th>Edad</th>
+                </tr>
+            </table>
+            <div class="input-box" id="input">
+                <button class="btn" onclick="panel('main')">Volver</button>
+            </div>
+            <p id="resultData"></p>
             `;
             break;
         default:
