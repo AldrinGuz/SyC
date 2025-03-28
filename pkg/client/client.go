@@ -227,6 +227,14 @@ func (c *client) fetchData() {
 		fmt.Println("Nombre: ", res.Data.Name)
 		fmt.Println("Apellidos: ", res.Data.SureName)
 		fmt.Println("ID: ", res.Data.ID)
+		fmt.Println("N_Exp: ", res.Data.NumHisClin)
+		fmt.Println("Edad: ", res.Data.Edad)
+		fmt.Println("Sexo: ", res.Data.Sexo)
+		fmt.Println("Estado civil: ", res.Data.EstadoCivil)
+		fmt.Println("Ocupación: ", res.Data.Ocupacion)
+		fmt.Println("Procedencia: ", res.Data.Procedencia)
+		fmt.Println("Motivo: ", res.Data.Motivo)
+		fmt.Println("Enfermedad: ", res.Data.Enfermedad)
 	}
 }
 
@@ -240,16 +248,33 @@ func (c *client) updateData() {
 		return
 	}
 
-	// Leemos la nueva Data
-	nameData := ui.ReadInput("Introduce el nombre del usuario")
-	surNameData := ui.ReadInput("Introduce el apellido del usuario")
-	idData := ui.ReadInt("Introduce el id del usuario")
-
+	// Inicializa un struct de Datos de expediente
 	newData := api.ClinicData{
-		Name:     nameData,
-		SureName: surNameData,
-		ID:       idData,
+		Name:        "",
+		SureName:    "",
+		ID:          0,
+		NumHisClin:  0,
+		Edad:        0,
+		Sexo:        "",
+		EstadoCivil: "",
+		Ocupacion:   "",
+		Procedencia: "",
+		Motivo:      "",
+		Enfermedad:  "",
 	}
+
+	// Leemos la nueva Data
+	newData.Name = ui.ReadInput("Introduce el nombre del usuario")
+	newData.SureName = ui.ReadInput("Introduce el apellido del usuario")
+	newData.ID = ui.ReadInt("Introduce el ID")
+	newData.NumHisClin = ui.ReadInt("Introduce el N de historia clinica")
+	newData.Edad = ui.ReadInt("Introduce la edad del usuario")
+	newData.Sexo = ui.ReadInput("Introduce el sexo del usuario")
+	newData.EstadoCivil = ui.ReadInput("Introduce el estado civil del usuario")
+	newData.Ocupacion = ui.ReadInput("Introduce la ocupación del usuario")
+	newData.Procedencia = ui.ReadInput("Introduce la procedencia del usuario")
+	newData.Motivo = ui.ReadInput("Introduce el motivo del usuario")
+	newData.Enfermedad = ui.ReadInput("Introduce la enfermedad del usuario")
 
 	// Enviamos la solicitud de actualización
 	res := c.sendRequest(api.Request{

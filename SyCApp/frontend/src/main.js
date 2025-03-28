@@ -88,10 +88,25 @@ window.logout = function(){
     }
 }
 window.updateData = function(){
-    let name = document.getElementById("nombre").value;
-    let surName = document.getElementById("apellidos").value;
-    let id = document.getElementById("ID").value;
-    let datos = JSON.stringify({Name:name,SurName:surName,ID:id})
+    let datos ={
+        Name:"",
+        SureName:"",
+        ID:0,
+        NumHisClin:0,
+	    Edad:0,
+    	Sexo:"",
+    	EstadoCivil:"",
+    	Ocupacion:"",
+    	Procedencia:"",
+    	Motivo:"",
+    	Enfermedad:""
+    }
+    datos.Name = document.getElementById("nombre").value;
+    datos.SureName = document.getElementById("apellidos").value;
+    datos.ID = parseInt(document.getElementById("ID").value);
+    let datosJ = JSON.stringify(datos)
+    console.log(datosJ)
+    
     let res = document.getElementById("resultData");
     res.remove();
     res = document.createElement("p");
@@ -100,7 +115,7 @@ window.updateData = function(){
     document.getElementById("input").appendChild(res);
 
     try{
-        App.UpdateData(datos).then((result)=>{
+        App.UpdateData(datosJ).then((result)=>{
             if(result == true){
                 res.innerText="Los datos se han enviado con éxito"
             }else{
@@ -123,9 +138,7 @@ window.getData = function(){
                 res.innerText = "Ha habido un error en la aplicación. Contacte con el soporte técnico"
             }
             else{
-                res.innerText = "Tus datos: " + result;
-                let y = JSON.parse(result)
-                res.innerText = "Tus datos: " + y.Name; 
+                res.innerText = "Tus datos: " + result; 
             }
         })
     }catch(err){
@@ -171,7 +184,7 @@ window.panel = function(tipo){
                 <label for="apellidos">Apellidos:</label>
                 <input class="input" id="apellidos" type="text" autocomplete="off" />
                 <label for="ID">NIE:</label>
-                <input class="input" id="ID" type="text" autocomplete="off" />
+                <input class="input" id="ID" type="number" autocomplete="off" />
                 <button class="btn" onclick="getData()">Datos</button>
                 <button class="btn" onclick="updateData()">Actualizar</button>
                 <button class="btn" onclick="logout()">Desconectar</button>

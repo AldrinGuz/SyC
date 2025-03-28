@@ -29,7 +29,15 @@ type Response struct {
 }
 
 type ClinicData struct {
-	Name     string
-	SureName string
-	ID       int
+	Name        string `json:"name"`
+	SureName    string `json:"surename"`
+	ID          int    `json:"id"`
+	NumHisClin  int    `json:"numhisclin"`
+	Edad        int
+	Sexo        string
+	EstadoCivil string
+	Ocupacion   string
+	Procedencia string
+	Motivo      string
+	Enfermedad  string
 }
