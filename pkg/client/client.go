@@ -223,22 +223,34 @@ func (c *client) fetchData() {
 
 	// Si fue exitoso, mostramos la data recibida
 	if res.Success {
-		// Recibimos el dato
-		data := res.Data
+		// Recibimos la lista de datos
+		dataList := res.Data
 
-		// Convertimos a []byte
-		encryptedData := decode64(data)
+		for i, data := range dataList {
+			// Convertimos a []byte
+			encryptedData := decode64(data)
 
-		// Desencriptamos
-		key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la encriptacion
-		jData := decrypt(encryptedData, key)
+			// Desencriptamos
+			key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la encriptacion
+			jData := decrypt(encryptedData, key)
 
-		// Convertimos a struct
-		var clinicData api.ClinicData
-		json.Unmarshal(jData, &clinicData)
+			// Convertimos a struct
+			var clinicData api.ClinicData
+			json.Unmarshal(jData, &clinicData)
 
-		fmt.Println("Tus datos:")
-		fmt.Println("Nombre: ", clinicData.Name)
+			fmt.Println("Datos paciente: ", i+1)
+			fmt.Println("Nombre: ", clinicData.Name)
+			fmt.Println("Apellidos: ", clinicData.SureName)
+			fmt.Println("ID: ", clinicData.ID)
+			fmt.Println("N_Exp: ", clinicData.NumHisClin)
+			fmt.Println("Edad: ", clinicData.Edad)
+			fmt.Println("Sexo: ", clinicData.Sexo)
+			fmt.Println("Estado civil: ", clinicData.EstadoCivil)
+			fmt.Println("Ocupación: ", clinicData.Ocupacion)
+			fmt.Println("Procedencia: ", clinicData.Procedencia)
+			fmt.Println("Motivo: ", clinicData.Motivo)
+			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
+		}
 	}
 }
 
@@ -269,6 +281,16 @@ func (c *client) updateData() {
 
 	// Leemos la nueva Data
 	newData.Name = ui.ReadInput("Introduce el nombre del usuario")
+	newData.SureName = ui.ReadInput("Introduce el apellido del usuario")
+	newData.ID = ui.ReadInt("Introduce el ID")
+	newData.NumHisClin = ui.ReadInt("Introduce el N de historia clinica")
+	newData.Edad = ui.ReadInt("Introduce la edad del usuario")
+	newData.Sexo = ui.ReadInput("Introduce el sexo del usuario")
+	newData.EstadoCivil = ui.ReadInput("Introduce el estado civil del usuario")
+	newData.Ocupacion = ui.ReadInput("Introduce la ocupación del usuario")
+	newData.Procedencia = ui.ReadInput("Introduce la procedencia del usuario")
+	newData.Motivo = ui.ReadInput("Introduce el motivo del usuario")
+	newData.Enfermedad = ui.ReadInput("Introduce la enfermedad del usuario")
 
 	// Convertimos a JSON
 	jData, err := json.Marshal(newData)

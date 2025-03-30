@@ -19,9 +19,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var temptData string
-var tempEncr []byte
-
 // server encapsula el estado de nuestro servidor
 type server struct {
 	db           store.Store // base de datos
@@ -272,14 +269,11 @@ func (s *server) fetchData(req api.Request) api.Response {
 			Message: "No hay datos disponibles",
 		}
 	}
-	fmt.Println("Server: ultimo elem ", listData[len(listData)-1])
-	if listData[len(listData)-1] != temptData {
-		return api.Response{Success: false, Message: "Error en lista o desencriptacion"}
-	}
+	//fmt.Println("Server: ultimo elem ", listData[len(listData)-1])
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    listData[len(listData)-1],
+		Data:    listData,
 	}
 }
 
@@ -328,7 +322,6 @@ func (s *server) updateData(req api.Request) api.Response {
 
 	// Añadimos elemento a la lista
 	listData = append(listData, req.Data)
-	temptData = req.Data
 
 	// Encriptar los datos del usuario antes de almacenarlos
 	jListdata, err := json.Marshal(listData)

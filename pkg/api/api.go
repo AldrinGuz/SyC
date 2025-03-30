@@ -22,10 +22,10 @@ type Request struct {
 }
 
 type Response struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Token   string `json:"token,omitempty"`
-	Data    string `json:"data,omitempty"`
+	Success bool     `json:"success"`
+	Message string   `json:"message"`
+	Token   string   `json:"token,omitempty"`
+	Data    []string `json:"data,omitempty"`
 }
 
 type ClinicData struct {
