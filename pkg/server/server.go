@@ -186,7 +186,13 @@ func (s *server) registerUser(req api.Request) api.Response {
 	}
 
 	// Creamos una entrada vacía para los datos en 'userdata'
-	if err := s.db.Put("userdata", encryptedUsername, []byte("")); err != nil {
+	var listData []string
+	jListdata, err := json.Marshal(listData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, err := encrypt(key, jListdata)
+	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
 
@@ -250,35 +256,30 @@ func (s *server) fetchData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
 	}
 
-	// Si no hay datos
-	if string(rawData) == "" {
+	// Desencriptar los datos del usuario
+	jListData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listData []string
+	json.Unmarshal(jListData, &listData)
+	// Si no hay elementos
+	if len(listData) == 0 {
 		return api.Response{
 			Success: false,
 			Message: "No hay datos disponibles",
 		}
 	}
-
-	// Desencriptar los datos del usuario
-	decryptedData, err := decrypt(key, rawData)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	fmt.Println("Server: ultimo elem ", listData[len(listData)-1])
+	if listData[len(listData)-1] != temptData {
+		return api.Response{Success: false, Message: "Error en lista o desencriptacion"}
 	}
-
-	// Transformamos los datos
-	var sData string
-	err = json.Unmarshal(decryptedData, &sData)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error en el Unarshal 268" + err.Error()}
-	}
-	fmt.Println("Server: el dato ", sData)
-	if temptData != sData {
-		return api.Response{Success: false, Message: "Los datos son diferentes"}
-	}
-
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    sData,
+		Data:    listData[len(listData)-1],
 	}
 }
 
@@ -301,22 +302,42 @@ func (s *server) updateData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
-	// Encriptar los datos del usuario antes de almacenarlos
-	temptData = req.Data
-	jData, err := json.Marshal(req.Data)
+	// Obtenemos los datos asociados al usuario desde 'userdata'
+	rawData, err := s.db.Get("userdata", encryptedUsername)
 	if err != nil {
-		return api.Response{Success: false, Message: "Error codificar struct to byte"}
+		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
 	}
-	encryptedData, err := encrypt(key, []byte(jData))
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al encriptar los datos del usuario"}
-	}
-	tempEncr = encryptedData
-	fmt.Println("Server: voy a guardar ", string(tempEncr))
 
-	// Escribimos el nuevo dato en 'userdata'
-	if err := s.db.Put("userdata", encryptedUsername, encryptedData); err != nil {
-		return api.Response{Success: false, Message: "Error al actualizar datos del usuario"}
+	// Si no hay datos
+	if len(rawData) < 1 {
+		return api.Response{
+			Success: false,
+			Message: "No hay datos disponibles",
+		}
+	}
+
+	// Desencriptar los datos del usuario
+	jListData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listData []string
+	json.Unmarshal(jListData, &listData)
+
+	// Añadimos elemento a la lista
+	listData = append(listData, req.Data)
+	temptData = req.Data
+
+	// Encriptar los datos del usuario antes de almacenarlos
+	jListdata, err := json.Marshal(listData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, err := encrypt(key, jListdata)
+	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
 
 	return api.Response{Success: true, Message: "Datos de usuario actualizados"}
