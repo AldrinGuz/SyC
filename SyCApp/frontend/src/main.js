@@ -147,14 +147,17 @@ window.getData = function(){
                 res.innerText = "Ha habido un error en la aplicación. Contacte con el soporte técnico"
             }
             else{
-                let data = JSON.parse(result);
-                console.log("aun continua la sentencia")
-                var node = document.createElement("tr");
-                node.setAttribute("id",data.ID);
-                node.setAttribute("class","temp");
-                node.setAttribute("style","cursor: pointer;");
-                node.innerHTML = "<th>"+data.NumHisClin+"</th>"+"<th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th>";
-                tableExp.appendChild(node);
+                let dataList = JSON.parse(result);
+                console.log(dataList)
+                for (let i = 0; i < dataList.length; i++) {
+                    var data = dataList[i];
+                    var node = document.createElement("tr");
+                    node.setAttribute("id",data.ID);
+                    node.setAttribute("class","temp");
+                    node.setAttribute("style","cursor: pointer;");
+                    node.innerHTML = "<th>"+data.NumHisClin+"</th>"+"<th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th>";
+                    tableExp.appendChild(node);
+                }
             }
         })
     }catch(err){
