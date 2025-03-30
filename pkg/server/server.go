@@ -19,6 +19,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var temptData string
+var tempEncr []byte
+
 // server encapsula el estado de nuestro servidor
 type server struct {
 	db           store.Store // base de datos
@@ -262,10 +265,14 @@ func (s *server) fetchData(req api.Request) api.Response {
 	}
 
 	// Transformamos los datos
-	var sData api.ClinicData
+	var sData string
 	err = json.Unmarshal(decryptedData, &sData)
 	if err != nil {
-		return api.Response{Success: false, Message: "Error " + err.Error()}
+		return api.Response{Success: false, Message: "Error en el Unarshal 268" + err.Error()}
+	}
+	fmt.Println("Server: el dato ", sData)
+	if temptData != sData {
+		return api.Response{Success: false, Message: "Los datos son diferentes"}
 	}
 
 	return api.Response{
@@ -295,6 +302,7 @@ func (s *server) updateData(req api.Request) api.Response {
 	}
 
 	// Encriptar los datos del usuario antes de almacenarlos
+	temptData = req.Data
 	jData, err := json.Marshal(req.Data)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error codificar struct to byte"}
@@ -303,6 +311,8 @@ func (s *server) updateData(req api.Request) api.Response {
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al encriptar los datos del usuario"}
 	}
+	tempEncr = encryptedData
+	fmt.Println("Server: voy a guardar ", string(tempEncr))
 
 	// Escribimos el nuevo dato en 'userdata'
 	if err := s.db.Put("userdata", encryptedUsername, encryptedData); err != nil {

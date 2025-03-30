@@ -223,18 +223,22 @@ func (c *client) fetchData() {
 
 	// Si fue exitoso, mostramos la data recibida
 	if res.Success {
+		// Recibimos el dato
+		data := res.Data
+
+		// Convertimos a []byte
+		encryptedData := decode64(data)
+
+		// Desencriptamos
+		key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la encriptacion
+		jData := decrypt(encryptedData, key)
+
+		// Convertimos a struct
+		var clinicData api.ClinicData
+		json.Unmarshal(jData, &clinicData)
+
 		fmt.Println("Tus datos:")
-		fmt.Println("Nombre: ", res.Data.Name)
-		fmt.Println("Apellidos: ", res.Data.SureName)
-		fmt.Println("ID: ", res.Data.ID)
-		fmt.Println("N_Exp: ", res.Data.NumHisClin)
-		fmt.Println("Edad: ", res.Data.Edad)
-		fmt.Println("Sexo: ", res.Data.Sexo)
-		fmt.Println("Estado civil: ", res.Data.EstadoCivil)
-		fmt.Println("Ocupación: ", res.Data.Ocupacion)
-		fmt.Println("Procedencia: ", res.Data.Procedencia)
-		fmt.Println("Motivo: ", res.Data.Motivo)
-		fmt.Println("Enfermedad: ", res.Data.Enfermedad)
+		fmt.Println("Nombre: ", clinicData.Name)
 	}
 }
 
@@ -265,23 +269,27 @@ func (c *client) updateData() {
 
 	// Leemos la nueva Data
 	newData.Name = ui.ReadInput("Introduce el nombre del usuario")
-	newData.SureName = ui.ReadInput("Introduce el apellido del usuario")
-	newData.ID = ui.ReadInt("Introduce el ID")
-	newData.NumHisClin = ui.ReadInt("Introduce el N de historia clinica")
-	newData.Edad = ui.ReadInt("Introduce la edad del usuario")
-	newData.Sexo = ui.ReadInput("Introduce el sexo del usuario")
-	newData.EstadoCivil = ui.ReadInput("Introduce el estado civil del usuario")
-	newData.Ocupacion = ui.ReadInput("Introduce la ocupación del usuario")
-	newData.Procedencia = ui.ReadInput("Introduce la procedencia del usuario")
-	newData.Motivo = ui.ReadInput("Introduce el motivo del usuario")
-	newData.Enfermedad = ui.ReadInput("Introduce la enfermedad del usuario")
+
+	// Convertimos a JSON
+	jData, err := json.Marshal(newData)
+	if err != nil {
+		fmt.Println("Error en Marshal 262")
+		return
+	}
+
+	// Encryptamos
+	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la desencriptacion
+	encriptedData := encrypt(jData, key)
+
+	// Conversion a string
+	data := encode64(encriptedData)
 
 	// Enviamos la solicitud de actualización
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionUpdateData,
 		Username: c.currentUser,
 		Token:    c.authToken,
-		Data:     newData,
+		Data:     data,
 	})
 
 	fmt.Println("Éxito:", res.Success)
@@ -359,9 +367,26 @@ func encrypt(data, key []byte) (out []byte) {
 	return
 }
 
+// función para descifrar (con AES en este caso)
+func decrypt(data, key []byte) (out []byte) {
+	out = make([]byte, len(data)-16)     // la salida no va a tener el IV
+	blk, err := aes.NewCipher(key)       // cifrador en bloque (AES), usa key
+	chk(err)                             // comprobamos el error
+	ctr := cipher.NewCTR(blk, data[:16]) // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out, data[16:])     // desciframos (doble cifrado) los datos
+	return
+}
+
 // función para codificar de []bytes a string (Base64)
 func encode64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
+}
+
+// función para decodificar de string a []bytes (Base64)
+func decode64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s) // recupera el formato original
+	chk(err)                                     // comprobamos el error
+	return b                                     // devolvemos los datos originales
 }
 
 // función para comprimir
