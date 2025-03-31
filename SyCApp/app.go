@@ -195,18 +195,18 @@ func (c *client) fetchData() string {
 			var clinicData api.ClinicData
 			json.Unmarshal(jData, &clinicData)
 
-			fmt.Println("Datos paciente: ", i+1)
-			fmt.Println("Nombre: ", clinicData.Name)
-			fmt.Println("Apellidos: ", clinicData.SureName)
-			fmt.Println("ID: ", clinicData.ID)
-			fmt.Println("N_Exp: ", clinicData.NumHisClin)
-			fmt.Println("Edad: ", clinicData.Edad)
-			fmt.Println("Sexo: ", clinicData.Sexo)
+			fmt.Println("Datos paciente: ", i+1)            //1-
+			fmt.Println("Nombre: ", clinicData.Name)        //4-
+			fmt.Println("Apellidos: ", clinicData.SureName) //5-
+			fmt.Println("ID: ", clinicData.ID)              //3-
+			fmt.Println("N_Exp: ", clinicData.NumHisClin)   //2-
+			fmt.Println("Edad: ", clinicData.Edad)          //6-
+			fmt.Println("Sexo: ", clinicData.Sexo)          //7-
 			fmt.Println("Estado civil: ", clinicData.EstadoCivil)
 			fmt.Println("Ocupación: ", clinicData.Ocupacion)
 			fmt.Println("Procedencia: ", clinicData.Procedencia)
-			fmt.Println("Motivo: ", clinicData.Motivo)
-			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
+			fmt.Println("Motivo: ", clinicData.Motivo)         //8
+			fmt.Println("Enfermedad: ", clinicData.Enfermedad) //9
 
 			// Añadimos el elemento a la lista
 			desencriptedList = append(desencriptedList, clinicData)

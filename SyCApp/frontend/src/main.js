@@ -104,6 +104,11 @@ window.updateData = function(){
     datos.Name = document.getElementById("nombre").value;
     datos.SureName = document.getElementById("apellidos").value;
     datos.ID = parseInt(document.getElementById("ID").value);
+    datos.NumHisClin = parseInt(document.getElementById("N_Exp").value);
+    datos.Edad = parseInt(document.getElementById("Edad").value);
+    datos.Sexo = document.getElementById("apellidos").value;
+    datos.Motivo = document.getElementById("Motivo").value;
+    datos.Enfermedad = document.getElementById("Enfermedad").value;
     let datosJ = JSON.stringify(datos)
     console.log(datosJ)
     
@@ -131,10 +136,15 @@ window.getData = function(){
     let tableExp = document.getElementById("tableExp");
     tableExp.innerHTML=`
         <tr>
+            <th>ID</th>
             <th>N Exp</th>
+            <th>DNI/NIE</th>
             <th>Nombre</th>
             <th>Apellidos</th>
             <th>Edad</th>
+            <th>Sexo</th>
+            <th>Consulta</th>
+            <th>Enfermedad</th>
         </tr>
     `;
     try{
@@ -155,7 +165,7 @@ window.getData = function(){
                     node.setAttribute("id",data.ID);
                     node.setAttribute("class","temp");
                     node.setAttribute("style","cursor: pointer;");
-                    node.innerHTML = "<th>"+data.NumHisClin+"</th>"+"<th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th>";
+                    node.innerHTML = "<th>"+(i+1)+"</th>"+"<th>"+data.NumHisClin+"</th><th>"+data.ID+"</th><th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th><th>"+data.Sexo+"</th><th>"+data.Motivo+"</th><th>"+data.Enfermedad+"</th>";
                     tableExp.appendChild(node);
                 }
             }
@@ -216,6 +226,16 @@ window.panel = function(tipo){
                 <input class="input" id="apellidos" type="text" autocomplete="off" />
                 <label for="ID">NIE:</label>
                 <input class="input" id="ID" type="number" autocomplete="off" />
+                <label for="N_Exp">Nº Expediente:</label>
+                <input class="input" id="N_Exp" type="number" autocomplete="off" />
+                <label for="Edad">Edad:</label>
+                <input class="input" id="Edad" type="number" autocomplete="off" />
+                <label for="Sexo">Sexo:</label>
+                <input class="input" id="Sexo" type="text" autocomplete="off" />
+                <label for="Motivo">Motivo de consulta:</label>
+                <input class="input" id="Motivo" type="text" autocomplete="off" />
+                <label for="Enfermedad">Enfermedad:</label>
+                <input class="input" id="Enfermedad" type="text" autocomplete="off" />
                 <button class="btn" onclick="updateData()">Crear</button>
                 <button class="btn" onclick="panel('main')">Volver</button>
                 <p id="resultData"></p>
@@ -228,10 +248,15 @@ window.panel = function(tipo){
             <p>Todos los pacientes actuales</p>
             <table id="tableExp">
                 <tr>
+                    <th>ID</th>
                     <th>N Exp</th>
+                    <th>DNI/NIE</th>
                     <th>Nombre</th>
                     <th>Apellidos</th>
                     <th>Edad</th>
+                    <th>Sexo</th>
+                    <th>Consulta</th>
+                    <th>Enfermedad</th>
                 </tr>
             </table>
             <div class="input-box" id="input">
