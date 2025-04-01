@@ -50,6 +50,7 @@ window.loggin = function () {
 window.register = function(){
     let name = document.getElementById("name").value;
     let pass = document.getElementById("password").value;
+    let rep = document.getElementById("repPassword").value;
 
     // Check if the input is empty
     if (name === ""){
@@ -60,6 +61,9 @@ window.register = function(){
         errorWindow("Falta la contraseña.");
         return;
     };
+    if (rep != pass){
+        errorWindow("Las contraseñas no coinciden.");
+    }
 
     try{
         App.Register(name,pass).then((result)=>{
@@ -105,7 +109,7 @@ window.updateData = function(){
     datos.ID = parseInt(document.getElementById("ID").value);
     datos.NumHisClin = parseInt(document.getElementById("N_Exp").value);
     datos.Edad = parseInt(document.getElementById("Edad").value);
-    datos.Sexo = document.getElementById("apellidos").value;
+    datos.Sexo = document.getElementById("Sexo").value;
     datos.Motivo = document.getElementById("Motivo").value;
     datos.Enfermedad = document.getElementById("Enfermedad").value;
     let datosJ = JSON.stringify(datos)
@@ -193,10 +197,12 @@ window.panel = function(tipo){
             <div class="result" id="result">Registrar</div>
             <p>Por favor, complete todos los campos 👇</p>
             <div class="input-box" id="input">
-                <label for="data">Nombre:</label>
+                <label for="data">(*)Nombre:</label>
                 <input class="input" id="name" type="text" autocomplete="off" />
-                <label for="password">Contraseña:</label>
+                <label for="password">(*)Contraseña:</label>
                 <input class="input" id="password" type="password" autocomplete="off" />
+                <label for="repPassword">(*)Repita la contraseña:</label>
+                <input class="input" id="repPassword" type="password" autocomplete="off" />
                 <button class="btn" onclick="register()">Registrar</button>
                 <button class="btn" onclick="panel('login')">Volver</button>
             </div>
@@ -217,23 +223,28 @@ window.panel = function(tipo){
         case "newExp":
             document.querySelector('#app').innerHTML = `
             <div class="result" id="result">Crear expediente</div>
-            <p>Por favor, complete todos los campos 👇</p>
+            <p>Por favor, complete todos los campos (*) 👇</p>
             <div class="input-box" id="input">
-                <label for="nombre">Nombre:</label>
+                <label for="nombre">(*)Nombre:</label>
                 <input class="input" id="nombre" type="text" autocomplete="off" />
-                <label for="apellidos">Apellidos:</label>
+                <label for="apellidos">(*)Apellidos:</label>
                 <input class="input" id="apellidos" type="text" autocomplete="off" />
-                <label for="ID">NIE:</label>
+                <label for="ID">(*)NIE:</label>
                 <input class="input" id="ID" type="number" autocomplete="off" />
-                <label for="N_Exp">Nº Expediente:</label>
+                <label for="N_Exp">(*)Nº Expediente:</label>
                 <input class="input" id="N_Exp" type="number" autocomplete="off" />
-                <label for="Edad">Edad:</label>
+                <label for="Edad">(*)Edad:</label>
                 <input class="input" id="Edad" type="number" autocomplete="off" />
-                <label for="Sexo">Sexo:</label>
-                <input class="input" id="Sexo" type="text" autocomplete="off" />
-                <label for="Motivo">Motivo de consulta:</label>
+                <label for="Sexo">(*)Sexo:</label>
+                <select name="Sexo" id="Sexo">
+                    <option value="Hombre">Hombre</option>
+                    <option value="Mujer">Mujer</option>
+                    <option value="No binario">Otro</option>
+                    <option value="Indeterminado">Prefiero no comunicarlo</option>
+                </select>
+                <label for="Motivo">(*)Motivo de consulta:</label>
                 <input class="input" id="Motivo" type="text" autocomplete="off" />
-                <label for="Enfermedad">Enfermedad:</label>
+                <label for="Enfermedad">(*)Enfermedad:</label>
                 <input class="input" id="Enfermedad" type="text" autocomplete="off" />
                 <button class="btn" onclick="updateData()">Crear</button>
                 <button class="btn" onclick="panel('main')">Volver</button>

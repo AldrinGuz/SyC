@@ -26,6 +26,8 @@ type server struct {
 	tokenCounter int64       // contador para generar tokens
 }
 
+var key = []byte("B36712BF5659B9D42BB274C56F637B32")
+
 // Run inicia la base de datos y arranca el servidor HTTP.
 func Run() error {
 	// Abrimos la base de datos usando el motor bbolt
@@ -163,7 +165,6 @@ func (s *server) registerUser(req api.Request) api.Response {
 	}
 
 	// Encriptar el nombre de usuario
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar una clave segura de 32 bytes
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
@@ -205,7 +206,6 @@ func (s *server) loginUser(req api.Request) api.Response {
 	}
 
 	// Encriptar el nombre de usuario para buscar en la base de datos
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
@@ -239,7 +239,6 @@ func (s *server) fetchData(req api.Request) api.Response {
 	}
 
 	// Encriptar el nombre de usuario para buscar en la base de datos
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
@@ -293,7 +292,6 @@ func (s *server) updateData(req api.Request) api.Response {
 	}
 
 	// Encriptar el nombre de usuario para buscar en la base de datos
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
@@ -343,6 +341,39 @@ func (s *server) updateData(req api.Request) api.Response {
 	return api.Response{Success: true, Message: "Datos de usuario actualizados"}
 }
 
+/*FEATURE
+// deletExp borra el expediente recivido de la bd
+func (s *server) deletExp(req api.Request) api.Response {
+	autho, errMess, encryptedUsername := s.autorizacion(req)
+	if autho == false {
+		return api.Response{Success: autho, Message: errMess}
+	}
+
+	// Obtenemos los datos asociados al usuario desde 'userdata'
+	rawData, err := s.db.Get("userdata", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+	}
+
+	// Si no hay datos
+	if len(rawData) < 1 {
+		return api.Response{Success: false, Message: "No hay datos disponibles"}
+	}
+
+	// Desencriptar los datos del usuario
+	jListData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listData []string
+	json.Unmarshal(jListData, &listData)
+
+	// Buscamos el elemento en la lista
+	listData.
+}*/
+
 // logoutUser borra la sesión en 'sessions', invalidando el token.
 func (s *server) logoutUser(req api.Request) api.Response {
 	// Chequeo de credenciales
@@ -351,7 +382,6 @@ func (s *server) logoutUser(req api.Request) api.Response {
 	}
 
 	// Encriptar el nombre de usuario para buscar en la base de datos
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
@@ -372,7 +402,6 @@ func (s *server) logoutUser(req api.Request) api.Response {
 // userExists comprueba si existe un usuario con la clave 'username'
 // en 'auth'. Si no se encuentra, retorna false.
 func (s *server) userExists(username string) (bool, error) {
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave que en el registro
 	encryptedUsername, err := encrypt(key, []byte(username))
 	if err != nil {
 		return false, err
@@ -406,4 +435,23 @@ func main() {
 	if err := Run(); err != nil {
 		log.Fatalf("Error al iniciar el servidor: %v", err)
 	}
+}
+
+func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
+	// Chequeo de credenciales
+	if req.Username == "" || req.Token == "" {
+		return false, "Faltan credenciales", nil
+	}
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return false, "Error al cifrar el nombre de usuario", nil
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
+		return false, "Token inválido o sesión expirada", nil
+	}
+
+	return true, "", encryptedUsername
 }
