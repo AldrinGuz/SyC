@@ -1,5 +1,4 @@
-// El paquete server contiene el código del servidor.
-// Interactúa con el cliente mediante una API JSON/HTTP
+// server.go
 package server
 
 import (
@@ -7,23 +6,30 @@ import (
 	"SyC/pkg/store"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
 // server encapsula el estado de nuestro servidor
 type server struct {
-	db           store.Store // base de datos
-	log          *log.Logger // logger para mensajes de error e información
-	tokenCounter int64       // contador para generar tokens
+	db  store.Store // base de datos
+	log *log.Logger // logger para mensajes de error e información
+}
+
+// TokenInfo contiene el token y su tiempo de expiración
+type TokenInfo struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 var key = []byte("B36712BF5659B9D42BB274C56F637B32")
@@ -50,8 +56,7 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux) // Modificar para que se levante con HTTPS
-
+	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux)
 	return err
 }
 
@@ -92,11 +97,57 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// generateToken crea un token único incrementando un contador interno (inseguro)
-func (s *server) generateToken() string {
-	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic es necesario al haber paralelismo en las peticiones HTTP.//Texto suficientemente largo tiene que tener una fecha de caducidad, para ello guardamos la fecha en la que se guarda el token
-	return fmt.Sprintf("token_%d", id)        //Cada vez que hace una accion tiene que comprovar el token del cliente si no lo tiene tiene que mandar un mensaje de error
-	//Se valida comprovando que es el mismo token y que esta dentro del tiempo limite
+// generateSecureToken genera un token aleatorio seguro y establece su tiempo de expiración
+func (s *server) generateSecureToken() (TokenInfo, error) {
+	// Tamaño del token en bytes (32 bytes = 256 bits)
+	tokenSize := 32
+
+	// Crear buffer para el token
+	tokenBytes := make([]byte, tokenSize)
+
+	// Llenar con bytes aleatorios criptográficamente seguros
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return TokenInfo{}, fmt.Errorf("error al generar token: %v", err)
+	}
+
+	// Codificar en base64 para hacerlo legible
+	token := base64.URLEncoding.EncodeToString(tokenBytes)
+
+	// Establecer tiempo de expiración (24 horas desde ahora)
+	expiresAt := time.Now().Add(24 * time.Hour)
+
+	return TokenInfo{
+		Token:     token,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// getTokenInfo obtiene la información completa del token (token + expiración)
+func (s *server) getTokenInfo(username []byte) (TokenInfo, error) {
+	// Obtener los datos del token desde la base de datos
+	tokenData, err := s.db.Get("sessions", username)
+	if err != nil {
+		return TokenInfo{}, err
+	}
+
+	// Decodificar los datos del token
+	var tokenInfo TokenInfo
+	if err := json.Unmarshal(tokenData, &tokenInfo); err != nil {
+		return TokenInfo{}, err
+	}
+
+	return tokenInfo, nil
+}
+
+// isTokenValid verifica si el token existe y no ha expirado
+func (s *server) isTokenValid(username []byte, token string) bool {
+	tokenInfo, err := s.getTokenInfo(username)
+	if err != nil {
+		return false
+	}
+
+	// Verificar que el token coincida y no haya expirado
+	return tokenInfo.Token == token && time.Now().Before(tokenInfo.ExpiresAt)
 }
 
 // encrypt cifra los datos utilizando AES en modo CTR.
@@ -222,13 +273,24 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
-	// Generamos un nuevo token, lo guardamos en 'sessions'
-	token := s.generateToken()
-	if err := s.db.Put("sessions", encryptedUsername, []byte(token)); err != nil {
+	// Generamos un nuevo token seguro con expiración
+	tokenInfo, err := s.generateSecureToken()
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar token de sesión"}
+	}
+
+	// Convertir tokenInfo a JSON para almacenar
+	tokenData, err := json.Marshal(tokenInfo)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al preparar token para almacenamiento"}
+	}
+
+	// Guardamos el token y su información de expiración en 'sessions'
+	if err := s.db.Put("sessions", encryptedUsername, tokenData); err != nil {
 		return api.Response{Success: false, Message: "Error al crear sesión"}
 	}
 
-	return api.Response{Success: true, Message: "Login exitoso", Token: token}
+	return api.Response{Success: true, Message: "Login exitoso", Token: tokenInfo.Token}
 }
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
@@ -275,7 +337,6 @@ func (s *server) fetchData(req api.Request) api.Response {
 		}
 	}
 
-	//fmt.Println("Server: ultimo elem ", listData[len(listData)-1])
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
@@ -341,39 +402,6 @@ func (s *server) updateData(req api.Request) api.Response {
 	return api.Response{Success: true, Message: "Datos de usuario actualizados"}
 }
 
-/*FEATURE
-// deletExp borra el expediente recivido de la bd
-func (s *server) deletExp(req api.Request) api.Response {
-	autho, errMess, encryptedUsername := s.autorizacion(req)
-	if autho == false {
-		return api.Response{Success: autho, Message: errMess}
-	}
-
-	// Obtenemos los datos asociados al usuario desde 'userdata'
-	rawData, err := s.db.Get("userdata", encryptedUsername)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
-	}
-
-	// Si no hay datos
-	if len(rawData) < 1 {
-		return api.Response{Success: false, Message: "No hay datos disponibles"}
-	}
-
-	// Desencriptar los datos del usuario
-	jListData, err := decrypt(key, rawData)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
-	}
-
-	// Convertimos a lista string
-	var listData []string
-	json.Unmarshal(jListData, &listData)
-
-	// Buscamos el elemento en la lista
-	listData.
-}*/
-
 // logoutUser borra la sesión en 'sessions', invalidando el token.
 func (s *server) logoutUser(req api.Request) api.Response {
 	// Chequeo de credenciales
@@ -421,22 +449,7 @@ func (s *server) userExists(username string) (bool, error) {
 	return true, nil
 }
 
-// isTokenValid comprueba que el token almacenado en 'sessions'
-// coincida con el token proporcionado.
-func (s *server) isTokenValid(username []byte, token string) bool {
-	storedToken, err := s.db.Get("sessions", username)
-	if err != nil {
-		return false
-	}
-	return string(storedToken) == token
-}
-
-func main() {
-	if err := Run(); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
-	}
-}
-
+// autorizacion verifica las credenciales y devuelve el nombre de usuario cifrado si son válidas
 func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
@@ -455,3 +468,30 @@ func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
 
 	return true, "", encryptedUsername
 }
+
+func main() {
+	if err := Run(); err != nil {
+		log.Fatalf("Error al iniciar el servidor: %v", err)
+	}
+}
+
+/*
+func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
+	// Chequeo de credenciales
+	if req.Username == "" || req.Token == "" {
+		return false, "Faltan credenciales", nil
+	}
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return false, "Error al cifrar el nombre de usuario", nil
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
+		return false, "Token inválido o sesión expirada", nil
+	}
+
+	return true, "", encryptedUsername
+}
+*/

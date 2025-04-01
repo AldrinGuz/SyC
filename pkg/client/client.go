@@ -243,7 +243,7 @@ func (c *client) fetchData() {
 			// Convertimos a struct
 			var clinicData api.ClinicData
 			json.Unmarshal(jData, &clinicData)
-
+			fmt.Println("----------------------")
 			fmt.Println("Datos paciente: ", i+1)
 			fmt.Println("Nombre: ", clinicData.Name)
 			fmt.Println("Apellidos: ", clinicData.SureName)
