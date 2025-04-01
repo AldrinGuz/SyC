@@ -132,10 +132,12 @@ func decrypt(key, ciphertext []byte) ([]byte, error) {
 	iv := ciphertext[:aes.BlockSize]
 	ciphertext = ciphertext[aes.BlockSize:]
 
+	// Crear un nuevo buffer para el texto plano
+	plaintext := make([]byte, len(ciphertext))
 	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
+	stream.XORKeyStream(plaintext, ciphertext)
 
-	return ciphertext, nil
+	return plaintext, nil
 }
 
 // registerUser registra un nuevo usuario, si no existe.
@@ -253,6 +255,10 @@ func (s *server) fetchData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
 	}
 
+	if len(rawData) == 0 {
+		return api.Response{Success: false, Message: "No hay datos para descifrar"}
+	}
+
 	// Desencriptar los datos del usuario
 	jListData, err := decrypt(key, rawData)
 	if err != nil {
@@ -269,6 +275,7 @@ func (s *server) fetchData(req api.Request) api.Response {
 			Message: "No hay datos disponibles",
 		}
 	}
+
 	//fmt.Println("Server: ultimo elem ", listData[len(listData)-1])
 	return api.Response{
 		Success: true,

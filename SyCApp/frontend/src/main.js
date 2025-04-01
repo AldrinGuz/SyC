@@ -1,5 +1,4 @@
 import './style.css';
-import './app.css';
 
 
 import * as App from '../wailsjs/go/main/App';

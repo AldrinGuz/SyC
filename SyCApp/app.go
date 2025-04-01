@@ -20,6 +20,9 @@ import (
 
 var c = &client{}
 
+// key compuesto por los credenciales de user
+var key []byte
+
 // App struct
 type App struct {
 	ctx context.Context
@@ -147,6 +150,8 @@ func (c *client) loginUser(user string, pass string) bool {
 
 	// Si login fue exitoso, guardamos currentUser y el token.
 	if res.Success {
+		fullHash := sha512.Sum512([]byte(username + password))
+		key = fullHash[:24]
 		c.currentUser = username
 		c.authToken = res.Token
 		fmt.Println("Sesión iniciada con éxito. Token guardado.")
@@ -188,7 +193,6 @@ func (c *client) fetchData() string {
 			encryptedData := decode64(data)
 
 			// Desencriptamos
-			key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la encriptacion
 			jData := decrypt(encryptedData, key)
 
 			// Convertimos a struct
@@ -245,7 +249,6 @@ func (c *client) updateData(datos string) bool {
 	}
 
 	// Encryptamos
-	key := []byte("B36712BF5659B9D42BB274C56F637B32") // Debes usar la misma clave para la desencriptacion
 	encriptedData := encrypt(jData, key)
 
 	// Conversion a string
@@ -294,6 +297,7 @@ func (c *client) logoutUser() bool {
 	if res.Success {
 		c.currentUser = ""
 		c.authToken = ""
+		key = nil
 		return true
 	} else {
 		return false

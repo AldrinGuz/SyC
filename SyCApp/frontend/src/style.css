@@ -1,93 +1,207 @@
-html {
-    background-color: rgba(27, 38, 54, 1);
-    text-align: center;
-    color: white;
-}
-/*
-body {
+/* Estilos generales */
+* {
     margin: 0;
-    color: white;
-    font-family: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-    "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
-}*/
-
-@font-face {
-    font-family: "Nunito";
-    font-style: normal;
-    font-weight: 400;
-    src: local(""),
-    url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
-}
-/*
-#app {
-    height: 100vh;
-    text-align: center;
-}*/
-body {
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
-    background-color: #76b5ff;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-#app {
-    width: 90%;
-    max-width: 400px;
-    background: #706c9b;
+body {
+    background-color: #98f1e3;
+    color: #333;
+    line-height: 1.6;
     padding: 20px;
+    min-height: 100vh;
+}
+
+#app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: white;
     border-radius: 10px;
-    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.result {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+    color: #2c3e50;
     text-align: center;
 }
 
 .input-box {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-top: 15px;
+    gap: 15px;
+    margin-top: 20px;
 }
 
 .input {
-    width: 100%;
-    padding: 10px 0px;
-    border: 1px solid #ccc;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
     border-radius: 5px;
-    font-size: 16px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.input:focus {
+    outline: none;
+    border-color: #3498db;
 }
 
 .btn {
-    background-color: #2b6d2a;
+    padding: 10px 15px;
+    background-color: #3498db;
     color: white;
     border: none;
-    padding: 10px;
     border-radius: 5px;
     cursor: pointer;
-    font-size: 16px;
-    transition: background 0.3s ease;
+    font-size: 1rem;
+    transition: background-color 0.3s;
 }
 
 .btn:hover {
-    background-color: #0056b3;
+    background-color: #2980b9;
 }
 
-.result {
-    font-size: 18px;
+.btn:active {
+    transform: scale(0.98);
+}
+
+/* Estilos para la ventana de error */
+.errWin {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #e74c3c;
+    color: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+#closeBtn {
+    background-color: white;
+    color: #e74c3c;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
     font-weight: bold;
-    margin-bottom: 15px;
+}
+
+/* Estilos para la tabla */
+#tableExp {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    overflow-x: auto;
+    display: block;
+    max-width: 100%;
+}
+
+#tableExp th, #tableExp td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+    white-space: nowrap;
+}
+
+#tableExp th {
+    background-color: #3498db;
+    color: white;
+    position: sticky;
+    top: 0;
+}
+
+#tableExp tr:hover {
+    background-color: #f5f5f5;
+}
+
+#tableExp tr.temp:hover {
+    background-color: #e3f2fd;
+    cursor: pointer;
+}
+
+/* Estilos responsivos */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    #app {
+        padding: 15px;
+    }
+
+    .input-box {
+        gap: 10px;
+    }
+
+    .input, .btn {
+        padding: 8px 12px;
+    }
+
+    #tableExp {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    #tableExp th, #tableExp td {
+        padding: 8px 10px;
+        font-size: 0.9rem;
+    }
 }
 
 @media (max-width: 480px) {
-    .input {
-        font-size: 14px;
-        padding: 8px;
+    .result {
+        font-size: 1.2rem;
     }
 
-    .btn {
-        font-size: 14px;
-        padding: 8px;
+    .input-box {
+        margin-top: 15px;
     }
+
+    #tableExp th, #tableExp td {
+        padding: 6px 8px;
+        font-size: 0.8rem;
+    }
+}
+
+/* Scroll personalizado para la tabla */
+::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }
