@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -32,10 +33,13 @@ type TokenInfo struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-var key = []byte("B36712BF5659B9D42BB274C56F637B32")
+var key []byte
 
 // Run inicia la base de datos y arranca el servidor HTTP.
-func Run() error {
+func Run(n1 string) error {
+	hash := sha256.Sum256([]byte(n1))
+	key = hash[:]
+
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
 	if err != nil {
@@ -469,29 +473,41 @@ func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
 	return true, "", encryptedUsername
 }
 
-func main() {
-	if err := Run(); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
-	}
-}
-
 /*
-func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
-	// Chequeo de credenciales
-	if req.Username == "" || req.Token == "" {
-		return false, "Faltan credenciales", nil
-	}
+	func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
+		// Chequeo de credenciales
+		if req.Username == "" || req.Token == "" {
+			return false, "Faltan credenciales", nil
+		}
 
-	// Encriptar el nombre de usuario para buscar en la base de datos
-	encryptedUsername, err := encrypt(key, []byte(req.Username))
-	if err != nil {
-		return false, "Error al cifrar el nombre de usuario", nil
-	}
+		// Encriptar el nombre de usuario para buscar en la base de datos
+		encryptedUsername, err := encrypt(key, []byte(req.Username))
+		if err != nil {
+			return false, "Error al cifrar el nombre de usuario", nil
+		}
 
-	if !s.isTokenValid(encryptedUsername, req.Token) {
-		return false, "Token inválido o sesión expirada", nil
-	}
+		if !s.isTokenValid(encryptedUsername, req.Token) {
+			return false, "Token inválido o sesión expirada", nil
+		}
 
-	return true, "", encryptedUsername
-}
+		return true, "", encryptedUsername
+	}
 */
+func check(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func hasearArchivo(textoEnClaro string, nombreArchivoDatos string) {
+	hash := sha256.Sum256([]byte(textoEnClaro))
+	hashString := fmt.Sprintf("%x", hash)
+
+	key = hash[:]
+	archivoDestino, err := os.Create(nombreArchivoDatos)
+	check(err)
+	defer archivoDestino.Close()
+
+	_, err = io.Copy(archivoDestino, strings.NewReader(hashString))
+	check(err)
+}
