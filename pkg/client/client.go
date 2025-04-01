@@ -164,6 +164,8 @@ func (c *client) registerUser() {
 			Password: encode64(keyLogin),
 		})
 		if loginRes.Success {
+			fullHash := sha512.Sum512([]byte(username + password))
+			key = fullHash[:24]
 			c.currentUser = username
 			c.authToken = loginRes.Token
 			fmt.Println("Login automático exitoso. Token guardado.")
