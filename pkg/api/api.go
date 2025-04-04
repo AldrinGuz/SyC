@@ -8,6 +8,7 @@ const (
 	ActionFetchData  = "fetchData"
 	ActionUpdateData = "updateData"
 	ActionLogout     = "logout"
+	ActionGetID      = "getID"
 )
 
 // Request y Response como antes
@@ -26,13 +27,13 @@ type Response struct {
 	Message string   `json:"message"`
 	Token   string   `json:"token,omitempty"`
 	Data    []string `json:"data,omitempty"`
+	ID      int      `json:"id,omitempty`
 }
 
 type ClinicData struct {
+	ID          int
 	Name        string
 	SureName    string
-	ID          int
-	NumHisClin  int
 	Edad        int
 	Sexo        string
 	EstadoCivil string

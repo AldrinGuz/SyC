@@ -244,11 +244,10 @@ func (c *client) fetchData() {
 			var clinicData api.ClinicData
 			json.Unmarshal(jData, &clinicData)
 			fmt.Println("----------------------")
-			fmt.Println("Datos paciente: ", i+1)
+			fmt.Println("Paciente N: ", i+1)
+			fmt.Println("ID: ", clinicData.ID)
 			fmt.Println("Nombre: ", clinicData.Name)
 			fmt.Println("Apellidos: ", clinicData.SureName)
-			fmt.Println("ID: ", clinicData.ID)
-			fmt.Println("N_Exp: ", clinicData.NumHisClin)
 			fmt.Println("Edad: ", clinicData.Edad)
 			fmt.Println("Sexo: ", clinicData.Sexo)
 			fmt.Println("Estado civil: ", clinicData.EstadoCivil)
@@ -257,7 +256,30 @@ func (c *client) fetchData() {
 			fmt.Println("Motivo: ", clinicData.Motivo)
 			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
 		}
+		for {
+			del := ui.ReadInput("Modificar expediente (S/N)")
+			if del == "S" || del == "s" {
+				c.modData()
+				break
+			}
+			mod := ui.ReadInput("Borrar expediente (S/N)")
+			if mod == "S" || mod == "s" {
+				c.delData()
+				break
+			}
+			if mod == "N" || del == "N" || mod == "n" || del == "n" {
+				break
+			}
+		}
 	}
+}
+
+func (c *client) modData() {
+	fmt.Println("Funcion de modificacion")
+}
+
+func (c *client) delData() {
+	fmt.Println("Funcion de eliminacion")
 }
 
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
@@ -272,10 +294,9 @@ func (c *client) updateData() {
 
 	// Inicializa un struct de Datos de expediente
 	newData := api.ClinicData{
+		ID:          0,
 		Name:        "",
 		SureName:    "",
-		ID:          0,
-		NumHisClin:  0,
 		Edad:        0,
 		Sexo:        "",
 		EstadoCivil: "",
@@ -288,8 +309,6 @@ func (c *client) updateData() {
 	// Leemos la nueva Data
 	newData.Name = ui.ReadInput("Introduce el nombre del usuario")
 	newData.SureName = ui.ReadInput("Introduce el apellido del usuario")
-	newData.ID = ui.ReadInt("Introduce el ID")
-	newData.NumHisClin = ui.ReadInt("Introduce el N de historia clinica")
 	newData.Edad = ui.ReadInt("Introduce la edad del usuario")
 	newData.Sexo = ui.ReadInput("Introduce el sexo del usuario")
 	newData.EstadoCivil = ui.ReadInput("Introduce el estado civil del usuario")
@@ -297,6 +316,19 @@ func (c *client) updateData() {
 	newData.Procedencia = ui.ReadInput("Introduce la procedencia del usuario")
 	newData.Motivo = ui.ReadInput("Introduce el motivo del usuario")
 	newData.Enfermedad = ui.ReadInput("Introduce la enfermedad del usuario")
+
+	//Pedimos id al servidor
+	res1 := c.sendRequest(api.Request{
+		Action:   api.ActionGetID,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+	if res1.Success {
+		newData.ID = res1.ID
+	} else {
+		fmt.Println("Error al obtener ID")
+		return
+	}
 
 	// Convertimos a JSON
 	jData, err := json.Marshal(newData)
@@ -312,15 +344,15 @@ func (c *client) updateData() {
 	data := encode64(encriptedData)
 
 	// Enviamos la solicitud de actualización
-	res := c.sendRequest(api.Request{
+	res2 := c.sendRequest(api.Request{
 		Action:   api.ActionUpdateData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 		Data:     data,
 	})
 
-	fmt.Println("Éxito:", res.Success)
-	fmt.Println("Mensaje:", res.Message)
+	fmt.Println("Éxito:", res2.Success)
+	fmt.Println("Mensaje:", res2.Message)
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,

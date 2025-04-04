@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -92,6 +91,8 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		res = s.updateData(req)
 	case api.ActionLogout:
 		res = s.logoutUser(req)
+	case api.ActionGetID:
+		res = s.getId(req)
 	default:
 		res = api.Response{Success: false, Message: "Acción desconocida"}
 	}
@@ -453,61 +454,25 @@ func (s *server) userExists(username string) (bool, error) {
 	return true, nil
 }
 
-// autorizacion verifica las credenciales y devuelve el nombre de usuario cifrado si son válidas
-func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
-	// Chequeo de credenciales
-	if req.Username == "" || req.Token == "" {
-		return false, "Faltan credenciales", nil
-	}
-
-	// Encriptar el nombre de usuario para buscar en la base de datos
-	encryptedUsername, err := encrypt(key, []byte(req.Username))
+func (s *server) getId(api.Request) api.Response {
+	jID, err := s.db.Get("gInt", []byte("gInt"))
 	if err != nil {
-		return false, "Error al cifrar el nombre de usuario", nil
-	}
-
-	if !s.isTokenValid(encryptedUsername, req.Token) {
-		return false, "Token inválido o sesión expirada", nil
-	}
-
-	return true, "", encryptedUsername
-}
-
-/*
-	func (s *server) autorizacion(req api.Request) (bool, string, []byte) {
-		// Chequeo de credenciales
-		if req.Username == "" || req.Token == "" {
-			return false, "Faltan credenciales", nil
+		jID, _ := json.Marshal(1)
+		if err := s.db.Put("gInt", []byte("gInt"), jID); err != nil {
+			fmt.Println("Error: ", err.Error())
+			return api.Response{Success: false, ID: 0}
+		} else {
+			fmt.Println("Error: ", err.Error())
+			return api.Response{Success: true, ID: 1}
 		}
-
-		// Encriptar el nombre de usuario para buscar en la base de datos
-		encryptedUsername, err := encrypt(key, []byte(req.Username))
-		if err != nil {
-			return false, "Error al cifrar el nombre de usuario", nil
-		}
-
-		if !s.isTokenValid(encryptedUsername, req.Token) {
-			return false, "Token inválido o sesión expirada", nil
-		}
-
-		return true, "", encryptedUsername
 	}
-*/
-func check(err error) {
-	if err != nil {
-		panic(err)
+	var Id int
+	json.Unmarshal(jID, &Id)
+	Id = Id + 1
+	jID, _ = json.Marshal(Id)
+	if err := s.db.Put("gInt", []byte("gInt"), jID); err != nil {
+		fmt.Println("Error: ", err.Error())
+		return api.Response{Success: false, ID: 0}
 	}
-}
-
-func hasearArchivo(textoEnClaro string, nombreArchivoDatos string) {
-	hash := sha256.Sum256([]byte(textoEnClaro))
-	hashString := fmt.Sprintf("%x", hash)
-
-	key = hash[:]
-	archivoDestino, err := os.Create(nombreArchivoDatos)
-	check(err)
-	defer archivoDestino.Close()
-
-	_, err = io.Copy(archivoDestino, strings.NewReader(hashString))
-	check(err)
+	return api.Response{Success: true, ID: Id}
 }
