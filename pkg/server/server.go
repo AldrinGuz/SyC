@@ -91,8 +91,12 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		res = s.updateData(req)
 	case api.ActionLogout:
 		res = s.logoutUser(req)
+	case api.ActionModData:
+		res = s.modData(req)
 	case api.ActionGetID:
 		res = s.getId(req)
+	case api.ActionDelData:
+		res = s.delData(req)
 	default:
 		res = api.Response{Success: false, Message: "Acción desconocida"}
 	}
@@ -430,6 +434,118 @@ func (s *server) logoutUser(req api.Request) api.Response {
 	}
 
 	return api.Response{Success: true, Message: "Sesión cerrada correctamente"}
+}
+
+func (s *server) modData(req api.Request) api.Response {
+	// Chequeo de credenciales
+	if req.Username == "" || req.Token == "" {
+		return api.Response{Success: false, Message: "Faltan credenciales"}
+	}
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
+		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+	}
+
+	// Obtenemos los datos asociados al usuario desde 'userdata'
+	rawData, err := s.db.Get("userdata", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+	}
+
+	// Si no hay datos
+	if len(rawData) < 1 {
+		return api.Response{
+			Success: false,
+			Message: "No hay datos disponibles",
+		}
+	}
+
+	// Desencriptar los datos del usuario
+	jListData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listData []string
+	json.Unmarshal(jListData, &listData)
+
+	// Añadimos elemento a la lista
+	listData[req.Position] = req.Data
+
+	// Encriptar los datos del usuario antes de almacenarlos
+	jListdata, err := json.Marshal(listData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, err := encrypt(key, jListdata)
+	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
+	}
+
+	return api.Response{Success: true, Message: "El expediente ha sido modificado con exito"}
+}
+
+func (s *server) delData(req api.Request) api.Response {
+	// Chequeo de credenciales
+	if req.Username == "" || req.Token == "" {
+		return api.Response{Success: false, Message: "Faltan credenciales"}
+	}
+
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	if !s.isTokenValid(encryptedUsername, req.Token) {
+		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+	}
+
+	// Obtenemos los datos asociados al usuario desde 'userdata'
+	rawData, err := s.db.Get("userdata", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+	}
+
+	// Si no hay datos
+	if len(rawData) < 1 {
+		return api.Response{
+			Success: false,
+			Message: "No hay datos disponibles",
+		}
+	}
+
+	// Desencriptar los datos del usuario
+	jListData, err := decrypt(key, rawData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listData []string
+	json.Unmarshal(jListData, &listData)
+
+	// Añadimos elemento a la lista
+	listData = append(listData[:req.Position], listData[req.Position+1:]...) //Puede que no funcione
+
+	// Encriptar los datos del usuario antes de almacenarlos
+	jListdata, err := json.Marshal(listData)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, err := encrypt(key, jListdata)
+	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
+	}
+
+	return api.Response{Success: true, Message: "El expediente ha sido eliminado con exito"}
 }
 
 // userExists comprueba si existe un usuario con la clave 'username'

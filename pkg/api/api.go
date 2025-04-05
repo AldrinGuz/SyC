@@ -8,6 +8,8 @@ const (
 	ActionFetchData  = "fetchData"
 	ActionUpdateData = "updateData"
 	ActionLogout     = "logout"
+	ActionModData    = "modData"
+	ActionDelData    = "delData"
 	ActionGetID      = "getID"
 )
 
@@ -20,6 +22,7 @@ type Request struct {
 	Data     string `json:"data,omitempty"`
 	PubKey   string `json:"pubKey,omitempty"`
 	PriKey   string `json:"priKey,omitempty"`
+	Position int    `json:"position,omitempty`
 }
 
 type Response struct {

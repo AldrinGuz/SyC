@@ -259,12 +259,12 @@ func (c *client) fetchData() {
 		for {
 			del := ui.ReadInput("Modificar expediente (S/N)")
 			if del == "S" || del == "s" {
-				c.modData()
+				c.modData(dataList)
 				break
 			}
 			mod := ui.ReadInput("Borrar expediente (S/N)")
 			if mod == "S" || mod == "s" {
-				c.delData()
+				c.delData(dataList)
 				break
 			}
 			if mod == "N" || del == "N" || mod == "n" || del == "n" {
@@ -274,12 +274,148 @@ func (c *client) fetchData() {
 	}
 }
 
-func (c *client) modData() {
-	fmt.Println("Funcion de modificacion")
+func (c *client) modData(listData []string) {
+	conf := ui.ReadInput("Seguro que deseas modificar el expediente? (S/N)")
+	if conf == "S" || conf == "s" {
+		if c.currentUser == "" || c.authToken == "" {
+			fmt.Println("No estás logueado. Inicia sesión primero.")
+			return
+		}
+
+		id := ui.ReadInt("Seleccione el ID")
+
+		var data api.ClinicData
+		posicion := 0
+
+		for i, elem := range listData {
+			// Convertimos a []byte
+			encryptedData := decode64(elem)
+
+			// Desencriptamos
+			jData := decrypt(encryptedData, key)
+
+			// Convertimos a struct
+			json.Unmarshal(jData, &data)
+
+			// Condicion
+			if id == data.ID {
+				posicion = i
+				break
+			}
+		}
+
+		// Inicializa un struct de Datos de expediente
+		newData := api.ClinicData{
+			ID:          data.ID,
+			Name:        data.Name,
+			SureName:    data.SureName,
+			Edad:        data.Edad,
+			Sexo:        data.Sexo,
+			EstadoCivil: data.EstadoCivil,
+			Ocupacion:   data.Ocupacion,
+			Procedencia: data.Procedencia,
+			Motivo:      data.Motivo,
+			Enfermedad:  data.Enfermedad,
+		}
+
+		newData.Name = ui.ReadInput("Nombre " + newData.Name)
+		newData.SureName = ui.ReadInput("Apellido " + newData.SureName)
+		newData.Edad = ui.ReadInt("Edad " + string(newData.Edad))
+		newData.Sexo = ui.ReadInput("Sexo " + newData.Sexo)
+		newData.EstadoCivil = ui.ReadInput("Estado civil " + newData.EstadoCivil)
+		newData.Ocupacion = ui.ReadInput("Ocupación " + newData.Ocupacion)
+		newData.Procedencia = ui.ReadInput("Procedencia " + newData.Procedencia)
+		newData.Motivo = ui.ReadInput("Motivo " + newData.Motivo)
+		newData.Enfermedad = ui.ReadInput("Enfermedad " + newData.Enfermedad)
+
+		// Convertimos a JSON
+		jData, err := json.Marshal(newData)
+		if err != nil {
+			fmt.Println("Error en Marshal 315")
+			return
+		}
+
+		// Encryptamos
+		encriptedData := encrypt(jData, key)
+
+		// Conversion a string
+		sendData := encode64(encriptedData)
+
+		// Enviamos la solicitud de actualización
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionModData,
+			Username: c.currentUser,
+			Token:    c.authToken,
+			Data:     sendData,
+			Position: posicion,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+	} else {
+		fmt.Println("Cancelar modificación")
+		return
+	}
 }
 
-func (c *client) delData() {
-	fmt.Println("Funcion de eliminacion")
+func (c *client) delData(listData []string) {
+	conf := ui.ReadInput("Seguro que deseas borrar el expediente? (S/N)")
+	if conf == "S" || conf == "s" {
+		if c.currentUser == "" || c.authToken == "" {
+			fmt.Println("No estás logueado. Inicia sesión primero.")
+			return
+		}
+
+		id := ui.ReadInt("Seleccione el ID")
+
+		var data api.ClinicData
+		posicion := 0
+
+		for i, elem := range listData {
+			// Convertimos a []byte
+			encryptedData := decode64(elem)
+
+			// Desencriptamos
+			jData := decrypt(encryptedData, key)
+
+			// Convertimos a struct
+			json.Unmarshal(jData, &data)
+
+			// Condicion
+			if id == data.ID {
+				posicion = i
+				break
+			}
+		}
+
+		// Convertimos a JSON
+		jData, err := json.Marshal(data)
+		if err != nil {
+			fmt.Println("Error en Marshal 315")
+			return
+		}
+
+		// Encryptamos
+		encriptedData := encrypt(jData, key)
+
+		// Conversion a string
+		sendData := encode64(encriptedData)
+
+		// Enviamos la solicitud de actualización
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionDelData,
+			Username: c.currentUser,
+			Token:    c.authToken,
+			Data:     sendData,
+			Position: posicion,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+	} else {
+		fmt.Println("Cancelar borrado")
+		return
+	}
 }
 
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
