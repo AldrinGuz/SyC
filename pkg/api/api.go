@@ -22,7 +22,7 @@ type Request struct {
 	Data     string `json:"data,omitempty"`
 	PubKey   string `json:"pubKey,omitempty"`
 	PriKey   string `json:"priKey,omitempty"`
-	Position int    `json:"position,omitempty`
+	Position int    `json:"position,omitempty"`
 }
 
 type Response struct {
@@ -30,7 +30,7 @@ type Response struct {
 	Message string   `json:"message"`
 	Token   string   `json:"token,omitempty"`
 	Data    []string `json:"data,omitempty"`
-	ID      int      `json:"id,omitempty`
+	ID      int      `json:"id,omitempty"`
 }
 
 type ClinicData struct {
@@ -39,8 +39,7 @@ type ClinicData struct {
 	SureName    string
 	Edad        int
 	Sexo        string
-	EstadoCivil string
-	Ocupacion   string
+	SIP         int
 	Procedencia string
 	Motivo      string
 	Enfermedad  string

@@ -95,21 +95,19 @@ window.updateData = function(){
         Name:"",
         SureName:"",
         ID:0,
-        NumHisClin:0,
 	    Edad:0,
     	Sexo:"",
-    	EstadoCivil:"",
-    	Ocupacion:"",
+        SIP:0,
     	Procedencia:"",
     	Motivo:"",
     	Enfermedad:""
     }
-    datos.Name = document.getElementById("nombre").value;
-    datos.SureName = document.getElementById("apellidos").value;
-    datos.ID = parseInt(document.getElementById("ID").value);
-    datos.NumHisClin = parseInt(document.getElementById("N_Exp").value);
+    datos.Name = document.getElementById("Nombre").value;
+    datos.SureName = document.getElementById("Apellidos").value;
     datos.Edad = parseInt(document.getElementById("Edad").value);
     datos.Sexo = document.getElementById("Sexo").value;
+    datos.SIP = parseInt(document.getElementById("SIP").value);
+    datos.Procedencia = document.getElementById("Procedencia").value;
     datos.Motivo = document.getElementById("Motivo").value;
     datos.Enfermedad = document.getElementById("Enfermedad").value;
     let datosJ = JSON.stringify(datos)
@@ -139,13 +137,14 @@ window.getData = function(){
     let tableExp = document.getElementById("tableExp");
     tableExp.innerHTML=`
         <tr>
+            <th>N</th>
             <th>ID</th>
-            <th>N Exp</th>
-            <th>DNI/NIE</th>
+            <th>SIP</th>
             <th>Nombre</th>
             <th>Apellidos</th>
             <th>Edad</th>
             <th>Sexo</th>
+            <th>Procedencia</th>
             <th>Consulta</th>
             <th>Enfermedad</th>
         </tr>
@@ -168,9 +167,83 @@ window.getData = function(){
                     node.setAttribute("id",data.ID);
                     node.setAttribute("class","temp");
                     node.setAttribute("style","cursor: pointer;");
-                    node.innerHTML = "<th>"+(i+1)+"</th>"+"<th>"+data.NumHisClin+"</th><th>"+data.ID+"</th><th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th><th>"+data.Sexo+"</th><th>"+data.Motivo+"</th><th>"+data.Enfermedad+"</th>";
+                    node.innerHTML = "<th>"+(i+1)+"</th>"+"<th>"+data.ID+"</th><th>"+data.SIP+"</th><th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th><th>"+data.Sexo+"</th><th>"+data.Procedencia+"</th><th>"+data.Motivo+"</th><th>"+data.Enfermedad+"</th>";
                     tableExp.appendChild(node);
                 }
+                var x = document.getElementsByClassName("temp")
+                for (let i = 0; i < x.length; i++){
+                    for (let j = 0; j < x.item(i).children.length - 1; j++){
+                        x.item(i).children.item(j).setAttribute("onclick","modify("+x.item(i).attributes.id.value+",'modExp')")
+                    }
+                }
+            }
+        })
+    }catch(err){
+        console.error(err)
+    }
+}
+window.modify = function(id,s){
+    panel(s);
+    let btnMod = document.getElementById("btnModData");
+    btnMod.setAttribute("onclick","modData("+id+")");
+    let btnDel = document.getElementById("btnDelData");
+    btnDel.setAttribute("onclick","delData("+id+")");
+}
+window.modData = function(id){
+    let datos ={
+        Name:"",
+        SureName:"",
+        ID:id,
+	    Edad:0,
+    	Sexo:"",
+        SIP:0,
+    	Procedencia:"",
+    	Motivo:"",
+    	Enfermedad:""
+    }
+    datos.Name = document.getElementById("Nombre").value;
+    datos.SureName = document.getElementById("Apellidos").value;
+    datos.Edad = parseInt(document.getElementById("Edad").value);
+    datos.Sexo = document.getElementById("Sexo").value;
+    datos.SIP = parseInt(document.getElementById("SIP").value);
+    datos.Procedencia = document.getElementById("Procedencia").value;
+    datos.Motivo = document.getElementById("Motivo").value;
+    datos.Enfermedad = document.getElementById("Enfermedad").value;
+    let datosJ = JSON.stringify(datos)
+    console.log(datosJ)
+    
+    let res = document.getElementById("resultData");
+    res.remove();
+    res = document.createElement("p");
+    res.setAttribute("id","resultData");
+    res.innerText="Cargando ...";
+    document.getElementById("input").appendChild(res);
+
+    try{
+        App.ModData(datosJ).then((result)=>{
+            if(result == true){
+                res.innerText="El expediente se ha modificado con exito"
+            }else{
+                res.innerText="Error: no se ha modificado"
+            }
+        })
+    }catch(err){
+        console.error(err)
+    }
+}
+window.delData = function(id){
+    let res = document.getElementById("resultData");
+    res.remove();
+    res = document.createElement("p");
+    res.setAttribute("id","resultData");
+    res.innerText="Cargando ...";
+    document.getElementById("input").appendChild(res);
+    try{
+        App.DelData(id).then((result)=>{
+            if(result == true){
+                res.innerText="El expediente se ha eliminado con exito"
+            }else{
+                res.innerText="Error: no se ha eliminado"
             }
         })
     }catch(err){
@@ -225,14 +298,12 @@ window.panel = function(tipo){
             <div class="result" id="result">Crear expediente</div>
             <p>Por favor, complete todos los campos (*) 👇</p>
             <div class="input-box" id="input">
-                <label for="nombre">(*)Nombre:</label>
-                <input class="input" id="nombre" type="text" autocomplete="off" />
-                <label for="apellidos">(*)Apellidos:</label>
-                <input class="input" id="apellidos" type="text" autocomplete="off" />
-                <label for="ID">(*)NIE:</label>
-                <input class="input" id="ID" type="number" autocomplete="off" />
-                <label for="N_Exp">(*)Nº Expediente:</label>
-                <input class="input" id="N_Exp" type="number" autocomplete="off" />
+                <label for="Nombre">(*)Nombre:</label>
+                <input class="input" id="Nombre" type="text" autocomplete="off" />
+                <label for="Apellidos">(*)Apellidos:</label>
+                <input class="input" id="Apellidos" type="text" autocomplete="off" />
+                <label for="SIP">(*)SIP:</label>
+                <input class="input" id="SIP" type="number" autocomplete="off" />
                 <label for="Edad">(*)Edad:</label>
                 <input class="input" id="Edad" type="number" autocomplete="off" />
                 <label for="Sexo">(*)Sexo:</label>
@@ -242,6 +313,8 @@ window.panel = function(tipo){
                     <option value="No binario">Otro</option>
                     <option value="Indeterminado">Prefiero no comunicarlo</option>
                 </select>
+                <label for="Procedencia">(*)Procedencia del usuario:</label>
+                <input class="input" id="Procedencia" type="text" autocomplete="off" />
                 <label for="Motivo">(*)Motivo de consulta:</label>
                 <input class="input" id="Motivo" type="text" autocomplete="off" />
                 <label for="Enfermedad">(*)Enfermedad:</label>
@@ -252,6 +325,39 @@ window.panel = function(tipo){
             </div>
             `;
             break;
+            case "modExp":
+                document.querySelector('#app').innerHTML = `
+                <div class="result" id="result">Crear expediente</div>
+                <p>Por favor, complete todos los campos (*) 👇</p>
+                <div class="input-box" id="input">
+                    <label for="Nombre">(*)Nombre:</label>
+                    <input class="input" id="Nombre" type="text" autocomplete="off" />
+                    <label for="Apellidos">(*)Apellidos:</label>
+                    <input class="input" id="Apellidos" type="text" autocomplete="off" />
+                    <label for="SIP">(*)SIP:</label>
+                    <input class="input" id="SIP" type="number" autocomplete="off" />
+                    <label for="Edad">(*)Edad:</label>
+                    <input class="input" id="Edad" type="number" autocomplete="off" />
+                    <label for="Sexo">(*)Sexo:</label>
+                    <select name="Sexo" id="Sexo">
+                        <option value="Hombre">Hombre</option>
+                        <option value="Mujer">Mujer</option>
+                        <option value="No binario">Otro</option>
+                        <option value="Indeterminado">Prefiero no comunicarlo</option>
+                    </select>
+                    <label for="Procedencia">(*)Procedencia del usuario:</label>
+                    <input class="input" id="Procedencia" type="text" autocomplete="off" />
+                    <label for="Motivo">(*)Motivo de consulta:</label>
+                    <input class="input" id="Motivo" type="text" autocomplete="off" />
+                    <label for="Enfermedad">(*)Enfermedad:</label>
+                    <input class="input" id="Enfermedad" type="text" autocomplete="off" />
+                    <button id="btnModData" class="btn" onclick="modData()">Actualizar</button>
+                    <button id="btnDelData" class="btn" onclick="delData()">Borrar</button>
+                    <button class="btn" onclick="getData()">Volver</button>
+                    <p id="resultData"></p>
+                </div>
+                `;
+                break;
         case "data":
             document.querySelector('#app').innerHTML = `
             <div class="result" id="result"></div>

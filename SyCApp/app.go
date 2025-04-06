@@ -62,6 +62,14 @@ func (a *App) GetData() string {
 	return c.fetchData()
 }
 
+func (a *App) ModData(data string) bool {
+	return c.modData(data)
+}
+
+func (a *App) DelData(ID int) bool {
+	return c.delData(ID)
+}
+
 // client estructura interna no exportada que controla
 // el estado de la sesión (usuario, token) y logger.
 type client struct {
@@ -205,11 +213,9 @@ func (c *client) fetchData() string {
 			fmt.Println("Nombre: ", clinicData.Name)        //4-
 			fmt.Println("Apellidos: ", clinicData.SureName) //5-
 			fmt.Println("ID: ", clinicData.ID)              //3-
-			fmt.Println("N_Exp: ", clinicData.NumHisClin)   //2-
+			fmt.Println("SIP: ", clinicData.SIP)            //2-
 			fmt.Println("Edad: ", clinicData.Edad)          //6-
 			fmt.Println("Sexo: ", clinicData.Sexo)          //7-
-			fmt.Println("Estado civil: ", clinicData.EstadoCivil)
-			fmt.Println("Ocupación: ", clinicData.Ocupacion)
 			fmt.Println("Procedencia: ", clinicData.Procedencia)
 			fmt.Println("Motivo: ", clinicData.Motivo)         //8
 			fmt.Println("Enfermedad: ", clinicData.Enfermedad) //9
@@ -243,6 +249,19 @@ func (c *client) updateData(datos string) bool {
 		return false
 	}
 
+	//Pedimos id al servidor
+	res1 := c.sendRequest(api.Request{
+		Action:   api.ActionGetID,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+	if res1.Success {
+		newData.ID = res1.ID
+	} else {
+		fmt.Println("Error al obtener ID")
+		return false
+	}
+
 	// Convertimos a JSON
 	jData, err := json.Marshal(newData)
 	if err != nil {
@@ -272,6 +291,152 @@ func (c *client) updateData(datos string) bool {
 		return true
 	} else {
 		return false
+	}
+}
+
+func (c *client) modData(datos string) bool {
+	if c.currentUser == "" || c.authToken == "" {
+		fmt.Println("No estás logueado. Inicia sesión primero.")
+		return false
+	}
+
+	// Leemos la nueva Data
+	var newData api.ClinicData
+	if json.Unmarshal([]byte(datos), &newData) != nil {
+		fmt.Println("Ha habido un erro en la conversión")
+		return false
+	}
+
+	var listData []string
+	posicion := -1
+
+	// Hacemos la request con ActionFetchData
+	res1 := c.sendRequest(api.Request{
+		Action:   api.ActionFetchData,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+
+	fmt.Println("Éxito:", res1.Success)
+	fmt.Println("Mensaje:", res1.Message)
+
+	// Si fue exitoso, mostramos la data recibida
+	if res1.Success {
+		// Recibimos la lista de datos
+		listData = res1.Data
+	} else {
+		return false
+	}
+
+	for i, elem := range listData {
+		// Convertimos a []byte
+		encryptedData := decode64(elem)
+
+		// Desencriptamos
+		jData := decrypt(encryptedData, key)
+
+		// Convertimos a struct
+		var data api.ClinicData
+		json.Unmarshal(jData, &data)
+
+		// Condicion
+		if newData.ID == data.ID {
+			posicion = i
+
+			// Convertimos a JSON
+			jData, err := json.Marshal(newData)
+			if err != nil {
+				fmt.Println("Error en Marshal 315")
+				return false
+			}
+
+			// Encryptamos
+			encriptedData := encrypt(jData, key)
+
+			// Conversion a string
+			sendData := encode64(encriptedData)
+
+			// Enviamos la solicitud de actualización
+			res2 := c.sendRequest(api.Request{
+				Action:   api.ActionModData,
+				Username: c.currentUser,
+				Token:    c.authToken,
+				Data:     sendData,
+				Position: posicion,
+			})
+
+			fmt.Println("Éxito:", res2.Success)
+			fmt.Println("Mensaje:", res2.Message)
+			break
+		}
+	}
+	if posicion == -1 {
+		fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+		return false
+	} else {
+		return true
+	}
+}
+
+func (c *client) delData(ID int) bool {
+	if c.currentUser == "" || c.authToken == "" {
+		fmt.Println("No estás logueado. Inicia sesión primero.")
+		return false
+	}
+
+	var listData []string
+	posicion := -1
+
+	// Hacemos la request con ActionFetchData
+	res1 := c.sendRequest(api.Request{
+		Action:   api.ActionFetchData,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+
+	fmt.Println("Éxito:", res1.Success)
+	fmt.Println("Mensaje:", res1.Message)
+
+	// Si fue exitoso, mostramos la data recibida
+	if res1.Success {
+		// Recibimos la lista de datos
+		listData = res1.Data
+	} else {
+		return false
+	}
+
+	for i, elem := range listData {
+		// Convertimos a []byte
+		encryptedData := decode64(elem)
+
+		// Desencriptamos
+		jData := decrypt(encryptedData, key)
+
+		// Convertimos a struct
+		var data api.ClinicData
+		json.Unmarshal(jData, &data)
+
+		// Condicion
+		if ID == data.ID {
+			posicion = i
+			// Hacemos la request con ActionFetchData
+			res2 := c.sendRequest(api.Request{
+				Action:   api.ActionDelData,
+				Username: c.currentUser,
+				Token:    c.authToken,
+				Position: i,
+			})
+
+			fmt.Println("Éxito:", res2.Success)
+			fmt.Println("Mensaje:", res2.Message)
+			break
+		}
+	}
+	if posicion == -1 {
+		fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+		return false
+	} else {
+		return true
 	}
 }
 

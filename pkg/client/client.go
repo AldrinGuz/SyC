@@ -20,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 // client estructura interna no exportada que controla
@@ -250,8 +251,7 @@ func (c *client) fetchData() {
 			fmt.Println("Apellidos: ", clinicData.SureName)
 			fmt.Println("Edad: ", clinicData.Edad)
 			fmt.Println("Sexo: ", clinicData.Sexo)
-			fmt.Println("Estado civil: ", clinicData.EstadoCivil)
-			fmt.Println("Ocupación: ", clinicData.Ocupacion)
+			fmt.Println("SIP: ", clinicData.SIP)
 			fmt.Println("Procedencia: ", clinicData.Procedencia)
 			fmt.Println("Motivo: ", clinicData.Motivo)
 			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
@@ -285,7 +285,7 @@ func (c *client) modData(listData []string) {
 		id := ui.ReadInt("Seleccione el ID")
 
 		var data api.ClinicData
-		posicion := 0
+		posicion := -1
 
 		for i, elem := range listData {
 			// Convertimos a []byte
@@ -303,6 +303,10 @@ func (c *client) modData(listData []string) {
 				break
 			}
 		}
+		if posicion == -1 {
+			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+			return
+		}
 
 		// Inicializa un struct de Datos de expediente
 		newData := api.ClinicData{
@@ -311,8 +315,7 @@ func (c *client) modData(listData []string) {
 			SureName:    data.SureName,
 			Edad:        data.Edad,
 			Sexo:        data.Sexo,
-			EstadoCivil: data.EstadoCivil,
-			Ocupacion:   data.Ocupacion,
+			SIP:         data.SIP,
 			Procedencia: data.Procedencia,
 			Motivo:      data.Motivo,
 			Enfermedad:  data.Enfermedad,
@@ -320,10 +323,9 @@ func (c *client) modData(listData []string) {
 
 		newData.Name = ui.ReadInput("Nombre " + newData.Name)
 		newData.SureName = ui.ReadInput("Apellido " + newData.SureName)
-		newData.Edad = ui.ReadInt("Edad " + string(newData.Edad))
+		newData.Edad = ui.ReadInt("Edad " + strconv.Itoa(newData.Edad))
 		newData.Sexo = ui.ReadInput("Sexo " + newData.Sexo)
-		newData.EstadoCivil = ui.ReadInput("Estado civil " + newData.EstadoCivil)
-		newData.Ocupacion = ui.ReadInput("Ocupación " + newData.Ocupacion)
+		newData.SIP = ui.ReadInt("SIP " + strconv.Itoa(newData.SIP))
 		newData.Procedencia = ui.ReadInput("Procedencia " + newData.Procedencia)
 		newData.Motivo = ui.ReadInput("Motivo " + newData.Motivo)
 		newData.Enfermedad = ui.ReadInput("Enfermedad " + newData.Enfermedad)
@@ -369,7 +371,7 @@ func (c *client) delData(listData []string) {
 		id := ui.ReadInt("Seleccione el ID")
 
 		var data api.ClinicData
-		posicion := 0
+		posicion := -1
 
 		for i, elem := range listData {
 			// Convertimos a []byte
@@ -387,26 +389,16 @@ func (c *client) delData(listData []string) {
 				break
 			}
 		}
-
-		// Convertimos a JSON
-		jData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error en Marshal 315")
+		if posicion == -1 {
+			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
 			return
 		}
-
-		// Encryptamos
-		encriptedData := encrypt(jData, key)
-
-		// Conversion a string
-		sendData := encode64(encriptedData)
 
 		// Enviamos la solicitud de actualización
 		res := c.sendRequest(api.Request{
 			Action:   api.ActionDelData,
 			Username: c.currentUser,
 			Token:    c.authToken,
-			Data:     sendData,
 			Position: posicion,
 		})
 
@@ -435,8 +427,7 @@ func (c *client) updateData() {
 		SureName:    "",
 		Edad:        0,
 		Sexo:        "",
-		EstadoCivil: "",
-		Ocupacion:   "",
+		SIP:         0,
 		Procedencia: "",
 		Motivo:      "",
 		Enfermedad:  "",
@@ -447,8 +438,7 @@ func (c *client) updateData() {
 	newData.SureName = ui.ReadInput("Introduce el apellido del usuario")
 	newData.Edad = ui.ReadInt("Introduce la edad del usuario")
 	newData.Sexo = ui.ReadInput("Introduce el sexo del usuario")
-	newData.EstadoCivil = ui.ReadInput("Introduce el estado civil del usuario")
-	newData.Ocupacion = ui.ReadInput("Introduce la ocupación del usuario")
+	newData.SIP = ui.ReadInt("Introduce el SIP del usuario")
 	newData.Procedencia = ui.ReadInput("Introduce la procedencia del usuario")
 	newData.Motivo = ui.ReadInput("Introduce el motivo del usuario")
 	newData.Enfermedad = ui.ReadInput("Introduce la enfermedad del usuario")
