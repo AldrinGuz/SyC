@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // PrintMenu muestra un menú y solicita al usuario que seleccione una opción.
@@ -117,4 +119,16 @@ func PrintProgressBar(progress, total int, width int) {
 	if progress == total {
 		fmt.Println()
 	}
+}
+
+// ReadSecretInput lee entrada sin mostrar lo que se escribe (modo secreto)
+func ReadSecretInput(prompt string) string {
+	fmt.Print(prompt)
+	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println() // Añade una nueva línea tras la entrada
+	if err != nil {
+		fmt.Println("Error leyendo la entrada secreta:", err)
+		return ""
+	}
+	return string(bytePassword)
 }

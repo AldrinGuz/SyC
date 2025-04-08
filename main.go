@@ -27,7 +27,7 @@ func main() {
 	log := log.New(os.Stdout, "[main] ", log.LstdFlags)
 
 	// Inicia servidor en goroutine.
-	nombre1 := ui.ReadInput("Añade clave mestra: ")
+	nombre1 := ui.ReadSecretInput("Añade clave maestra: ")
 	log.Println("Iniciando servidor...")
 	go func() {
 		if err := server.Run(nombre1); err != nil {

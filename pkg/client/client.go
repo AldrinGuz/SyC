@@ -126,9 +126,9 @@ func (c *client) registerUser() {
 	password := ui.ReadInput("Contraseña")
 
 	// hash con SHA512 de la contraseña
-	keyClient := sha512.Sum512([]byte(password))
-	keyLogin := keyClient[:32]  // una mitad para el login (256 bits)
-	keyData := keyClient[32:64] // la otra para los datos (256 bits)
+	keyClient := sha512.Sum512([]byte(password + username)) //Combinacion de usuario y contraseña para que sea unica dado que las contraseñas puedencoincidir
+	keyLogin := keyClient[:32]                              // una mitad para el login (256 bits)
+	keyData := keyClient[32:64]                             // la otra para los datos (256 bits)
 
 	// generamos un par de claves (privada, pública) para el servidor
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
@@ -182,7 +182,7 @@ func (c *client) loginUser() {
 	fmt.Println("** Inicio de sesión **")
 
 	username := ui.ReadInput("Nombre de usuario")
-	password := ui.ReadInput("Contraseña")
+	password := ui.ReadSecretInput("Contraseña: ")
 
 	// hash con SHA512 de la contraseña
 	keyClient := sha512.Sum512([]byte(password))
@@ -216,6 +216,9 @@ func (c *client) fetchData() {
 	// Chequeo básico de que haya sesión
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 
@@ -271,6 +274,10 @@ func (c *client) fetchData() {
 				break
 			}
 		}
+	} else {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 	}
 }
 
@@ -279,6 +286,9 @@ func (c *client) modData(listData []string) {
 	if conf == "S" || conf == "s" {
 		if c.currentUser == "" || c.authToken == "" {
 			fmt.Println("No estás logueado. Inicia sesión primero.")
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
 			return
 		}
 
@@ -356,6 +366,9 @@ func (c *client) modData(listData []string) {
 		fmt.Println("Mensaje:", res.Message)
 	} else {
 		fmt.Println("Cancelar modificación")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 }
@@ -365,6 +378,9 @@ func (c *client) delData(listData []string) {
 	if conf == "S" || conf == "s" {
 		if c.currentUser == "" || c.authToken == "" {
 			fmt.Println("No estás logueado. Inicia sesión primero.")
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
 			return
 		}
 
@@ -406,6 +422,9 @@ func (c *client) delData(listData []string) {
 		fmt.Println("Mensaje:", res.Message)
 	} else {
 		fmt.Println("Cancelar borrado")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 }
@@ -417,6 +436,9 @@ func (c *client) updateData() {
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 
@@ -453,6 +475,10 @@ func (c *client) updateData() {
 		newData.ID = res1.ID
 	} else {
 		fmt.Println("Error al obtener ID")
+		fmt.Println(res1.Message)
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 
@@ -479,6 +505,11 @@ func (c *client) updateData() {
 
 	fmt.Println("Éxito:", res2.Success)
 	fmt.Println("Mensaje:", res2.Message)
+	if !res2.Success {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
+	}
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,
@@ -488,7 +519,10 @@ func (c *client) logoutUser() {
 	fmt.Println("** Cerrar sesión **")
 
 	if c.currentUser == "" || c.authToken == "" {
-		fmt.Println("No estás logueado.")
+		fmt.Println("No estás logueado. Inicia sesión primero.")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return
 	}
 
@@ -503,11 +537,9 @@ func (c *client) logoutUser() {
 	fmt.Println("Mensaje:", res.Message)
 
 	// Si fue exitoso, limpiamos la sesión local.
-	if res.Success {
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
-	}
+	c.currentUser = ""
+	c.authToken = ""
+	key = nil
 }
 
 // sendRequest envía un POST JSON a la URL del servidor y

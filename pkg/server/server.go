@@ -123,7 +123,7 @@ func (s *server) generateSecureToken() (TokenInfo, error) {
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
 	// Establecer tiempo de expiración (24 horas desde ahora)
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(500 * time.Millisecond)
 
 	return TokenInfo{
 		Token:     token,

@@ -86,7 +86,7 @@ func (c *client) registerUser(user string, pass string) bool {
 	password := pass
 
 	// hash con SHA512 de la contraseña
-	keyClient := sha512.Sum512([]byte(password))
+	keyClient := sha512.Sum512([]byte(password + username))
 	keyLogin := keyClient[:32]  // una mitad para el login (256 bits)
 	keyData := keyClient[32:64] // la otra para los datos (256 bits)
 
@@ -229,6 +229,9 @@ func (c *client) fetchData() string {
 		}
 		return string(jData)
 	} else {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return "/Error: 503 Service Unavailable*"
 	}
 }
@@ -259,6 +262,9 @@ func (c *client) updateData(datos string) bool {
 		newData.ID = res1.ID
 	} else {
 		fmt.Println("Error al obtener ID")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return false
 	}
 
@@ -290,6 +296,9 @@ func (c *client) updateData(datos string) bool {
 		fmt.Println("Datos enviados:", data)
 		return true
 	} else {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return false
 	}
 }
@@ -367,6 +376,11 @@ func (c *client) modData(datos string) bool {
 
 			fmt.Println("Éxito:", res2.Success)
 			fmt.Println("Mensaje:", res2.Message)
+			if !res2.Success {
+				c.currentUser = ""
+				c.authToken = ""
+				key = nil
+			}
 			break
 		}
 	}
@@ -402,6 +416,9 @@ func (c *client) delData(ID int) bool {
 		// Recibimos la lista de datos
 		listData = res1.Data
 	} else {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return false
 	}
 
@@ -429,6 +446,11 @@ func (c *client) delData(ID int) bool {
 
 			fmt.Println("Éxito:", res2.Success)
 			fmt.Println("Mensaje:", res2.Message)
+			if !res2.Success {
+				c.currentUser = ""
+				c.authToken = ""
+				key = nil
+			}
 			break
 		}
 	}
@@ -467,6 +489,9 @@ func (c *client) logoutUser() bool {
 		key = nil
 		return true
 	} else {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
 		return false
 	}
 }
