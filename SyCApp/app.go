@@ -380,6 +380,7 @@ func (c *client) modData(datos string) bool {
 				c.currentUser = ""
 				c.authToken = ""
 				key = nil
+				return false
 			}
 			break
 		}
@@ -450,6 +451,7 @@ func (c *client) delData(ID int) bool {
 				c.currentUser = ""
 				c.authToken = ""
 				key = nil
+				return false
 			}
 			break
 		}
@@ -469,7 +471,6 @@ func (c *client) logoutUser() bool {
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado.")
-		return false
 	}
 
 	// Llamamos al servidor con la acción ActionLogout
@@ -483,17 +484,10 @@ func (c *client) logoutUser() bool {
 	fmt.Println("Mensaje:", res.Message)
 
 	// Si fue exitoso, limpiamos la sesión local.
-	if res.Success {
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
-		return true
-	} else {
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
-		return false
-	}
+	c.currentUser = ""
+	c.authToken = ""
+	key = nil
+	return true
 }
 
 // sendRequest envía un POST JSON a la URL del servidor y

@@ -111,7 +111,6 @@ window.updateData = function(){
     datos.Motivo = document.getElementById("Motivo").value;
     datos.Enfermedad = document.getElementById("Enfermedad").value;
     let datosJ = JSON.stringify(datos)
-    console.log(datosJ)
     
     let res = document.getElementById("resultData");
     res.remove();
@@ -126,6 +125,7 @@ window.updateData = function(){
                 res.innerText="Los datos se han enviado con éxito"
             }else{
                 res.innerText="Error: los datos no se han enviado"
+                logout()
             }
         })
     }catch(err){
@@ -134,6 +134,11 @@ window.updateData = function(){
 }
 window.getData = function(){
     panel('data');
+    let res = document.getElementById("resultData");
+    res.remove();
+    res = document.createElement("p");
+    res.setAttribute("id","resultData");
+    document.getElementById("input").appendChild(res);
     let tableExp = document.getElementById("tableExp");
     tableExp.innerHTML=`
         <tr>
@@ -155,12 +160,13 @@ window.getData = function(){
                 res.innerText = "Ha habido un error con el servidor";
             }else if(result === "/Error: 401 Unauthorized*"){
                 res.innerText = "Ha habido un error interno, reinicia la aplicación";
+                logout()
             }else if(result ==="/Error: Fallo en la conversión de datos"){
                 res.innerText = "Ha habido un error en la aplicación. Contacte con el soporte técnico"
+                logout()
             }
             else{
                 let dataList = JSON.parse(result);
-                console.log(dataList)
                 for (let i = 0; i < dataList.length; i++) {
                     var data = dataList[i];
                     var node = document.createElement("tr");
@@ -210,7 +216,6 @@ window.modData = function(id){
     datos.Motivo = document.getElementById("Motivo").value;
     datos.Enfermedad = document.getElementById("Enfermedad").value;
     let datosJ = JSON.stringify(datos)
-    console.log(datosJ)
     
     let res = document.getElementById("resultData");
     res.remove();

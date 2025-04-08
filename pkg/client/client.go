@@ -364,11 +364,13 @@ func (c *client) modData(listData []string) {
 
 		fmt.Println("Éxito:", res.Success)
 		fmt.Println("Mensaje:", res.Message)
+		if !res.Success {
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+		}
 	} else {
 		fmt.Println("Cancelar modificación")
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
 		return
 	}
 }
@@ -420,11 +422,14 @@ func (c *client) delData(listData []string) {
 
 		fmt.Println("Éxito:", res.Success)
 		fmt.Println("Mensaje:", res.Message)
+		if !res.Success {
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+			return
+		}
 	} else {
 		fmt.Println("Cancelar borrado")
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
 		return
 	}
 }
