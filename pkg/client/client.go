@@ -101,7 +101,7 @@ func (c *client) runLoop() {
 			case 1:
 				c.fetchData()
 			case 2:
-				c.updateData()
+				c.addData()
 			case 3:
 				c.logoutUser()
 			case 4:
@@ -165,7 +165,7 @@ func (c *client) registerUser() {
 			Password: encode64(keyLogin),
 		})
 		if loginRes.Success {
-			fullHash := sha512.Sum512([]byte(username + password))
+			fullHash := sha512.Sum512([]byte(password + username))
 			key = fullHash[:24]
 			c.currentUser = username
 			c.authToken = loginRes.Token
@@ -185,7 +185,7 @@ func (c *client) loginUser() {
 	password := ui.ReadSecretInput("Contraseña: ")
 
 	// hash con SHA512 de la contraseña
-	keyClient := sha512.Sum512([]byte(password))
+	keyClient := sha512.Sum512([]byte(password + username))
 	keyLogin := keyClient[:32] // una mitad para el login (256 bits)
 
 	res := c.sendRequest(api.Request{
@@ -199,12 +199,42 @@ func (c *client) loginUser() {
 
 	// Si login fue exitoso, guardamos currentUser y el token.
 	if res.Success {
-		fullHash := sha512.Sum512([]byte(username + password))
+		fullHash := sha512.Sum512([]byte(password + username))
 		key = fullHash[:24]
 		c.currentUser = username
 		c.authToken = res.Token
 		fmt.Println("Sesión iniciada con éxito. Token guardado.")
 	}
+}
+
+// logoutUser llama a la acción logout en el servidor, y si es exitosa,
+// borra la sesión local (currentUser/authToken).
+func (c *client) logoutUser() {
+	ui.ClearScreen()
+	fmt.Println("** Cerrar sesión **")
+
+	if c.currentUser == "" || c.authToken == "" {
+		fmt.Println("No estás logueado. Inicia sesión primero.")
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
+		return
+	}
+
+	// Llamamos al servidor con la acción ActionLogout
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionLogout,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
+
+	// Si fue exitoso, limpiamos la sesión local.
+	c.currentUser = ""
+	c.authToken = ""
+	key = nil
 }
 
 // fetchData pide datos privados al servidor.
@@ -222,9 +252,9 @@ func (c *client) fetchData() {
 		return
 	}
 
-	// Hacemos la request con ActionFetchData
+	// Hacemos la request con ActionGetData
 	res := c.sendRequest(api.Request{
-		Action:   api.ActionFetchData,
+		Action:   api.ActionGetData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 	})
@@ -242,7 +272,8 @@ func (c *client) fetchData() {
 			encryptedData := decode64(data)
 
 			// Desencriptamos
-			jData := decrypt(encryptedData, key)
+			compr := decrypt(encryptedData, key) // Descomprimimos
+			jData := decompress(compr)
 
 			// Convertimos a struct
 			var clinicData api.ClinicData
@@ -259,19 +290,21 @@ func (c *client) fetchData() {
 			fmt.Println("Motivo: ", clinicData.Motivo)
 			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
 		}
-		for {
-			del := ui.ReadInput("Modificar expediente (S/N)")
-			if del == "S" || del == "s" {
-				c.modData(dataList)
-				break
-			}
-			mod := ui.ReadInput("Borrar expediente (S/N)")
-			if mod == "S" || mod == "s" {
-				c.delData(dataList)
-				break
-			}
-			if mod == "N" || del == "N" || mod == "n" || del == "n" {
-				break
+		if len(res.Data) > 0 {
+			for {
+				del := ui.ReadInput("Modificar expediente (S/N)")
+				if del == "S" || del == "s" {
+					c.modData(res)
+					break
+				}
+				mod := ui.ReadInput("Borrar expediente (S/N)")
+				if mod == "S" || mod == "s" {
+					c.delData(res)
+					break
+				}
+				if mod == "N" || del == "N" || mod == "n" || del == "n" {
+					break
+				}
 			}
 		}
 	} else {
@@ -281,161 +314,8 @@ func (c *client) fetchData() {
 	}
 }
 
-func (c *client) modData(listData []string) {
-	conf := ui.ReadInput("Seguro que deseas modificar el expediente? (S/N)")
-	if conf == "S" || conf == "s" {
-		if c.currentUser == "" || c.authToken == "" {
-			fmt.Println("No estás logueado. Inicia sesión primero.")
-			c.currentUser = ""
-			c.authToken = ""
-			key = nil
-			return
-		}
-
-		id := ui.ReadInt("Seleccione el ID")
-
-		var data api.ClinicData
-		posicion := -1
-
-		for i, elem := range listData {
-			// Convertimos a []byte
-			encryptedData := decode64(elem)
-
-			// Desencriptamos
-			jData := decrypt(encryptedData, key)
-
-			// Convertimos a struct
-			json.Unmarshal(jData, &data)
-
-			// Condicion
-			if id == data.ID {
-				posicion = i
-				break
-			}
-		}
-		if posicion == -1 {
-			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
-			return
-		}
-
-		// Inicializa un struct de Datos de expediente
-		newData := api.ClinicData{
-			ID:          data.ID,
-			Name:        data.Name,
-			SureName:    data.SureName,
-			Edad:        data.Edad,
-			Sexo:        data.Sexo,
-			SIP:         data.SIP,
-			Procedencia: data.Procedencia,
-			Motivo:      data.Motivo,
-			Enfermedad:  data.Enfermedad,
-		}
-
-		newData.Name = ui.ReadInput("Nombre " + newData.Name)
-		newData.SureName = ui.ReadInput("Apellido " + newData.SureName)
-		newData.Edad = ui.ReadInt("Edad " + strconv.Itoa(newData.Edad))
-		newData.Sexo = ui.ReadInput("Sexo " + newData.Sexo)
-		newData.SIP = ui.ReadInt("SIP " + strconv.Itoa(newData.SIP))
-		newData.Procedencia = ui.ReadInput("Procedencia " + newData.Procedencia)
-		newData.Motivo = ui.ReadInput("Motivo " + newData.Motivo)
-		newData.Enfermedad = ui.ReadInput("Enfermedad " + newData.Enfermedad)
-
-		// Convertimos a JSON
-		jData, err := json.Marshal(newData)
-		if err != nil {
-			fmt.Println("Error en Marshal 315")
-			return
-		}
-
-		// Encryptamos
-		encriptedData := encrypt(jData, key)
-
-		// Conversion a string
-		sendData := encode64(encriptedData)
-
-		// Enviamos la solicitud de actualización
-		res := c.sendRequest(api.Request{
-			Action:   api.ActionModData,
-			Username: c.currentUser,
-			Token:    c.authToken,
-			Data:     sendData,
-			Position: posicion,
-		})
-
-		fmt.Println("Éxito:", res.Success)
-		fmt.Println("Mensaje:", res.Message)
-		if !res.Success {
-			c.currentUser = ""
-			c.authToken = ""
-			key = nil
-		}
-	} else {
-		fmt.Println("Cancelar modificación")
-		return
-	}
-}
-
-func (c *client) delData(listData []string) {
-	conf := ui.ReadInput("Seguro que deseas borrar el expediente? (S/N)")
-	if conf == "S" || conf == "s" {
-		if c.currentUser == "" || c.authToken == "" {
-			fmt.Println("No estás logueado. Inicia sesión primero.")
-			c.currentUser = ""
-			c.authToken = ""
-			key = nil
-			return
-		}
-
-		id := ui.ReadInt("Seleccione el ID")
-
-		var data api.ClinicData
-		posicion := -1
-
-		for i, elem := range listData {
-			// Convertimos a []byte
-			encryptedData := decode64(elem)
-
-			// Desencriptamos
-			jData := decrypt(encryptedData, key)
-
-			// Convertimos a struct
-			json.Unmarshal(jData, &data)
-
-			// Condicion
-			if id == data.ID {
-				posicion = i
-				break
-			}
-		}
-		if posicion == -1 {
-			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
-			return
-		}
-
-		// Enviamos la solicitud de actualización
-		res := c.sendRequest(api.Request{
-			Action:   api.ActionDelData,
-			Username: c.currentUser,
-			Token:    c.authToken,
-			Position: posicion,
-		})
-
-		fmt.Println("Éxito:", res.Success)
-		fmt.Println("Mensaje:", res.Message)
-		if !res.Success {
-			c.currentUser = ""
-			c.authToken = ""
-			key = nil
-			return
-		}
-	} else {
-		fmt.Println("Cancelar borrado")
-		return
-	}
-}
-
-// updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
-func (c *client) updateData() {
+// addData pide nuevo texto y lo envía al servidor con ActionPostData.
+func (c *client) addData() {
 	ui.ClearScreen()
 	fmt.Println("** Actualizar datos del usuario **")
 
@@ -486,23 +366,11 @@ func (c *client) updateData() {
 		key = nil
 		return
 	}
-
-	// Convertimos a JSON
-	jData, err := json.Marshal(newData)
-	if err != nil {
-		fmt.Println("Error en Marshal 262")
-		return
-	}
-
-	// Encryptamos
-	encriptedData := encrypt(jData, key)
-
-	// Conversion a string
-	data := encode64(encriptedData)
+	data := packData(newData)
 
 	// Enviamos la solicitud de actualización
 	res2 := c.sendRequest(api.Request{
-		Action:   api.ActionUpdateData,
+		Action:   api.ActionPostData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 		Data:     data,
@@ -517,34 +385,110 @@ func (c *client) updateData() {
 	}
 }
 
-// logoutUser llama a la acción logout en el servidor, y si es exitosa,
-// borra la sesión local (currentUser/authToken).
-func (c *client) logoutUser() {
-	ui.ClearScreen()
-	fmt.Println("** Cerrar sesión **")
+func (c *client) modData(res api.Response) {
+	conf := ui.ReadInput("Seguro que deseas modificar el expediente? (S/N)")
+	if conf == "S" || conf == "s" {
+		if c.currentUser == "" || c.authToken == "" {
+			fmt.Println("No estás logueado. Inicia sesión primero.")
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+			return
+		}
 
-	if c.currentUser == "" || c.authToken == "" {
-		fmt.Println("No estás logueado. Inicia sesión primero.")
-		c.currentUser = ""
-		c.authToken = ""
-		key = nil
+		id := ui.ReadInt("Seleccione el ID")
+
+		posicion, data := unpackData(res, id)
+		if posicion == -1 {
+			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+			return
+		}
+
+		// Inicializa un struct de Datos de expediente
+		newData := api.ClinicData{
+			ID:          data.ID,
+			Name:        data.Name,
+			SureName:    data.SureName,
+			Edad:        data.Edad,
+			Sexo:        data.Sexo,
+			SIP:         data.SIP,
+			Procedencia: data.Procedencia,
+			Motivo:      data.Motivo,
+			Enfermedad:  data.Enfermedad,
+		}
+
+		newData.Name = ui.ReadInput("Nombre " + newData.Name)
+		newData.SureName = ui.ReadInput("Apellido " + newData.SureName)
+		newData.Edad = ui.ReadInt("Edad " + strconv.Itoa(newData.Edad))
+		newData.Sexo = ui.ReadInput("Sexo " + newData.Sexo)
+		newData.SIP = ui.ReadInt("SIP " + strconv.Itoa(newData.SIP))
+		newData.Procedencia = ui.ReadInput("Procedencia " + newData.Procedencia)
+		newData.Motivo = ui.ReadInput("Motivo " + newData.Motivo)
+		newData.Enfermedad = ui.ReadInput("Enfermedad " + newData.Enfermedad)
+
+		sendData := packData(newData)
+
+		// Enviamos la solicitud de actualización
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionPutData,
+			Username: c.currentUser,
+			Token:    c.authToken,
+			Data:     sendData,
+			Position: posicion,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+		if !res.Success {
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+		}
+	} else {
+		fmt.Println("Cancelar modificación")
 		return
 	}
+}
 
-	// Llamamos al servidor con la acción ActionLogout
-	res := c.sendRequest(api.Request{
-		Action:   api.ActionLogout,
-		Username: c.currentUser,
-		Token:    c.authToken,
-	})
+func (c *client) delData(res api.Response) {
+	conf := ui.ReadInput("Seguro que deseas borrar el expediente? (S/N)")
+	if conf == "S" || conf == "s" {
+		if c.currentUser == "" || c.authToken == "" {
+			fmt.Println("No estás logueado. Inicia sesión primero.")
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+			return
+		}
 
-	fmt.Println("Éxito:", res.Success)
-	fmt.Println("Mensaje:", res.Message)
+		id := ui.ReadInt("Seleccione el ID")
 
-	// Si fue exitoso, limpiamos la sesión local.
-	c.currentUser = ""
-	c.authToken = ""
-	key = nil
+		posicion, _ := unpackData(res, id)
+		if posicion == -1 {
+			fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+			return
+		}
+
+		// Enviamos la solicitud de actualización
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionDeleteData,
+			Username: c.currentUser,
+			Token:    c.authToken,
+			Position: posicion,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+		if !res.Success {
+			c.currentUser = ""
+			c.authToken = ""
+			key = nil
+			return
+		}
+	} else {
+		fmt.Println("Cancelar borrado")
+		return
+	}
 }
 
 // sendRequest envía un POST JSON a la URL del servidor y
@@ -619,4 +563,45 @@ func compress(data []byte) []byte {
 	w.Write(data)           // escribimos los datos
 	w.Close()               // cerramos el escritor (buffering)
 	return b.Bytes()        // devolvemos los datos comprimidos
+}
+
+// función para descomprimir
+func decompress(data []byte) []byte {
+	var b bytes.Buffer // b contendrá los datos descomprimidos
+
+	r, err := zlib.NewReader(bytes.NewReader(data)) // lector descomprime al leer
+
+	chk(err)         // comprobamos el error
+	io.Copy(&b, r)   // copiamos del descompresor (r) al buffer (b)
+	r.Close()        // cerramos el lector (buffering)
+	return b.Bytes() // devolvemos los datos descomprimidos
+}
+
+// función prepara el dato para su envio
+func packData(Data api.ClinicData) string {
+	jData, err := json.Marshal(Data) // Convertimos a JSON
+	if err != nil {
+		fmt.Println("Error en Marshal 315")
+		return ""
+	}
+	compr := compress(jData)             // Comprimimos
+	encriptedData := encrypt(compr, key) // Encryptamos
+	sendData := encode64(encriptedData)  // Conversion a string
+	return sendData
+}
+func unpackData(res api.Response, id int) (int, api.ClinicData) {
+	posicion := -1
+	// Recibimos la lista de datos
+	for i, data := range res.Data {
+		encryptedData := decode64(data)      // Convertimos a []byte
+		compr := decrypt(encryptedData, key) // Desencriptamos
+		jData := decompress(compr)           // Descomprimimos
+		var clinicData api.ClinicData        // Convertimos a struct
+		json.Unmarshal(jData, &clinicData)
+		if id == clinicData.ID { // Condicion
+			posicion = i
+			return posicion, clinicData
+		}
+	}
+	return posicion, api.ClinicData{Name: "Eyo"}
 }

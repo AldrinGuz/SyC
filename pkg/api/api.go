@@ -5,11 +5,11 @@ package api
 const (
 	ActionRegister   = "register"
 	ActionLogin      = "login"
-	ActionFetchData  = "fetchData"
-	ActionUpdateData = "updateData"
+	ActionGetData    = "fetchData"
+	ActionPostData   = "addData"
 	ActionLogout     = "logout"
-	ActionModData    = "modData"
-	ActionDelData    = "delData"
+	ActionPutData    = "modData"
+	ActionDeleteData = "delData"
 	ActionGetID      = "getID"
 )
 
