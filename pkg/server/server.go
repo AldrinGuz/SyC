@@ -9,7 +9,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,19 +18,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // server encapsula el estado de nuestro servidor
 type server struct {
-	db  store.Store // base de datos
-	log *log.Logger // logger para mensajes de error e información
+	db        store.Store   // base de datos
+	log       *log.Logger   // logger para mensajes de error e información
+	jwtSecret []byte        // secreto para firmar JWT
+	tokenExp  time.Duration // tiempo de expiración del token
 }
 
-// TokenInfo contiene el token y su tiempo de expiración
-type TokenInfo struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
+// JWTClaims contiene los claims personalizados para nuestros tokens
+type JWTClaims struct {
+	Username string `json:"username"`
+	jwt.RegisteredClaims
 }
 
 var key []byte
@@ -40,6 +42,10 @@ var key []byte
 func Run(n1 string) error {
 	hash := sha256.Sum256([]byte(n1))
 	key = hash[:24]
+
+	// Configuración JWT
+	jwtSecret := hash[:32] // Usamos 32 bytes para el secreto JWT
+	tokenExp := 60 * time.Minute
 
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
@@ -55,8 +61,10 @@ func Run(n1 string) error {
 
 	// Creamos nuestro servidor con su logger con prefijo 'srv'
 	srv := &server{
-		db:  db,
-		log: log.New(os.Stdout, "[srv] ", log.LstdFlags),
+		db:        db,
+		log:       log.New(os.Stdout, "[srv] ", log.LstdFlags),
+		jwtSecret: jwtSecret,
+		tokenExp:  tokenExp,
 	}
 
 	// Al terminar, cerramos la base de datos
@@ -114,57 +122,54 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// generateSecureToken genera un token aleatorio seguro y establece su tiempo de expiración
-func (s *server) generateSecureToken() (TokenInfo, error) {
-	// Tamaño del token en bytes (32 bytes = 256 bits)
-	tokenSize := 32
+// generateJWT genera un nuevo token JWT para el usuario
+func (s *server) generateJWT(username string) (string, error) {
+	expirationTime := time.Now().Add(s.tokenExp)
 
-	// Crear buffer para el token
-	tokenBytes := make([]byte, tokenSize)
-
-	// Llenar con bytes aleatorios criptográficamente seguros
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return TokenInfo{}, fmt.Errorf("error al generar token: %v", err)
+	claims := &JWTClaims{
+		Username: username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "SyC Server",
+		},
 	}
 
-	// Codificar en base64 para hacerlo legible
-	token := base64.URLEncoding.EncodeToString(tokenBytes)
-
-	// Establecer tiempo de expiración (24 horas desde ahora)
-	expiresAt := time.Now().Add(60 * time.Minute)
-
-	return TokenInfo{
-		Token:     token,
-		ExpiresAt: expiresAt,
-	}, nil
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.jwtSecret)
 }
 
-// getTokenInfo obtiene la información completa del token (token + expiración)
-func (s *server) getTokenInfo(username []byte) (TokenInfo, error) {
-	// Obtener los datos del token desde la base de datos
-	tokenData, err := s.db.Get("sessions", username)
+// validateJWT verifica si un token JWT es válido
+func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
+	claims := &JWTClaims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("método de firma inesperado: %v", token.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	})
+
 	if err != nil {
-		return TokenInfo{}, err
+		return nil, err
 	}
 
-	// Decodificar los datos del token
-	var tokenInfo TokenInfo
-	if err := json.Unmarshal(tokenData, &tokenInfo); err != nil {
-		return TokenInfo{}, err
+	if !token.Valid {
+		return nil, fmt.Errorf("token inválido")
 	}
 
-	return tokenInfo, nil
+	return claims, nil
 }
 
-// isTokenValid verifica si el token existe y no ha expirado
-func (s *server) isTokenValid(username []byte, token string) bool {
-	tokenInfo, err := s.getTokenInfo(username)
+// isTokenValid verifica si el token JWT es válido y corresponde al usuario
+func (s *server) isTokenValid(username, tokenString string) bool {
+	claims, err := s.validateJWT(tokenString)
 	if err != nil {
 		return false
 	}
 
-	// Verificar que el token coincida y no haya expirado
-	return tokenInfo.Token == token && time.Now().Before(tokenInfo.ExpiresAt)
+	return claims.Username == username
 }
 
 // encrypt cifra los datos utilizando AES en modo CTR.
@@ -267,47 +272,37 @@ func (s *server) registerUser(req api.Request) api.Response {
 	return api.Response{Success: true, Message: "Usuario registrado"}
 }
 
-// loginUser valida credenciales en el namespace 'auth' y genera un token en 'sessions'.
+// loginUser valida credenciales y genera un token JWT.
 func (s *server) loginUser(req api.Request) api.Response {
 	if req.Username == "" || req.Password == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
-	// Recogemos la contraseña hasheada guardada en 'auth'
 	hashedPassword, err := s.db.Get("auth", encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
-	// Comparamos la contraseña proporcionada con la contraseña hasheada
 	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(req.Password)); err != nil {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
-	// Generamos un nuevo token seguro con expiración
-	tokenInfo, err := s.generateSecureToken()
+	// Generar JWT
+	tokenString, err := s.generateJWT(req.Username)
 	if err != nil {
-		return api.Response{Success: false, Message: "Error al generar token de sesión"}
+		return api.Response{Success: false, Message: "Error al generar token JWT"}
 	}
 
-	// Convertir tokenInfo a JSON para almacenar
-	tokenData, err := json.Marshal(tokenInfo)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al preparar token para almacenamiento"}
+	return api.Response{
+		Success: true,
+		Message: "Login exitoso",
+		Token:   tokenString,
 	}
-
-	// Guardamos el token y su información de expiración en 'sessions'
-	if err := s.db.Put("sessions", encryptedUsername, tokenData); err != nil {
-		return api.Response{Success: false, Message: "Error al crear sesión"}
-	}
-
-	return api.Response{Success: true, Message: "Login exitoso", Token: tokenInfo.Token}
 }
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
@@ -327,7 +322,6 @@ func (s *server) fetchData(req api.Request) api.Response {
 // addData cambia el contenido de 'userdata' (los "datos" del usuario)
 // después de validar el token.
 func (s *server) addData(req api.Request) api.Response {
-
 	listData, res := s.writeUserData(req)
 	if !res.Success {
 		return res
@@ -339,26 +333,14 @@ func (s *server) addData(req api.Request) api.Response {
 	return s.closeUserData(listData, req, "Datos de usuario actualizados")
 }
 
-// logoutUser borra la sesión en 'sessions', invalidando el token.
+// logoutUser invalida el token (en el cliente)
 func (s *server) logoutUser(req api.Request) api.Response {
-	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Encriptar el nombre de usuario para buscar en la base de datos
-	encryptedUsername, err := encrypt(key, []byte(req.Username))
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
-	}
-
-	if !s.isTokenValid(encryptedUsername, req.Token) {
+	if !s.isTokenValid(req.Username, req.Token) {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
-	}
-
-	// Borramos la entrada en 'sessions'
-	if err := s.db.Delete("sessions", encryptedUsername); err != nil {
-		return api.Response{Success: false, Message: "Error al cerrar sesión"}
 	}
 
 	return api.Response{Success: true, Message: "Sesión cerrada correctamente"}
@@ -382,7 +364,7 @@ func (s *server) delData(req api.Request) api.Response {
 	}
 
 	// Añadimos elemento a la lista
-	listData = append(listData[:req.Position], listData[req.Position+1:]...) //Puede que no funcione
+	listData = append(listData[:req.Position], listData[req.Position+1:]...)
 
 	return s.closeUserData(listData, req, "El expediente ha sido eliminado con exito")
 }
@@ -427,7 +409,7 @@ func (s *server) writeUserData(req api.Request) ([]string, api.Response) {
 		return nil, api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
-	if !s.isTokenValid(encryptedUsername, req.Token) {
+	if !s.isTokenValid(req.Username, req.Token) {
 		return nil, api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
@@ -455,7 +437,7 @@ func (s *server) writeUserData(req api.Request) ([]string, api.Response) {
 	return listData, api.Response{Success: true}
 }
 
-func (s *server) closeUserData(listData []string, req api.Request, message string) api.Response { //Necesitará tokens tambien o es excesivo?
+func (s *server) closeUserData(listData []string, req api.Request, message string) api.Response {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -467,7 +449,7 @@ func (s *server) closeUserData(listData []string, req api.Request, message strin
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
-	if !s.isTokenValid(encryptedUsername, req.Token) {
+	if !s.isTokenValid(req.Username, req.Token) {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 	// Encriptar los datos del usuario antes de almacenarlos
