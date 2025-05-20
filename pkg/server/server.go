@@ -9,8 +9,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"log"
 	"math/big"
 	"net/http"
@@ -19,18 +21,19 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// server encapsula el estado de nuestro servidor
 type server struct {
-	db        store.Store   // base de datos
-	log       *log.Logger   // logger para mensajes de error e información
-	jwtSecret []byte        // secreto para firmar JWT
-	tokenExp  time.Duration // tiempo de expiración del token
+	db         store.Store
+	log        *log.Logger
+	jwtSecret  []byte
+	tokenExp   time.Duration
+	totpIssuer string
 }
 
-// JWTClaims contiene los claims personalizados para nuestros tokens
 type JWTClaims struct {
 	Username string `json:"username"`
 	jwt.RegisteredClaims
@@ -38,16 +41,13 @@ type JWTClaims struct {
 
 var key []byte
 
-// Run inicia la base de datos y arranca el servidor HTTP.
 func Run(n1 string) error {
 	hash := sha256.Sum256([]byte(n1))
 	key = hash[:24]
 
-	// Configuración JWT
-	jwtSecret := hash[:32] // Usamos 32 bytes para el secreto JWT
+	jwtSecret := hash[:32]
 	tokenExp := 60 * time.Minute
 
-	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
 	if err != nil {
 		return fmt.Errorf("error abriendo base de datos: %v", err)
@@ -59,42 +59,35 @@ func Run(n1 string) error {
 		return fmt.Errorf("error la clave maestra no es coincidente")
 	}
 
-	// Creamos nuestro servidor con su logger con prefijo 'srv'
 	srv := &server{
-		db:        db,
-		log:       log.New(os.Stdout, "[srv] ", log.LstdFlags),
-		jwtSecret: jwtSecret,
-		tokenExp:  tokenExp,
+		db:         db,
+		log:        log.New(os.Stdout, "[srv] ", log.LstdFlags),
+		jwtSecret:  jwtSecret,
+		tokenExp:   tokenExp,
+		totpIssuer: "SyC App",
 	}
 
-	// Al terminar, cerramos la base de datos
 	defer srv.db.Close()
 
-	// Construimos un mux y asociamos /api a nuestro apiHandler,
 	mux := http.NewServeMux()
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
-	// Iniciamos el servidor HTTP.
 	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux)
 	return err
 }
 
-// apiHandler descodifica la solicitud JSON, la despacha
-// a la función correspondiente y devuelve la respuesta JSON.
 func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Decodificamos la solicitud en una estructura api.Request
 	var req api.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Error en el formato JSON", http.StatusBadRequest)
 		return
 	}
 
-	// Despacho según la acción solicitada
 	var res api.Response
 	switch req.Action {
 	case api.ActionRegister:
@@ -113,16 +106,53 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		res = s.delData(req)
 	case api.ActionGetID:
 		res = s.getId(req)
+	case api.ActionEnable2FA:
+		res = s.enable2FA(req)
+	case api.ActionDisable2FA:
+		res = s.disable2FA(req)
+	case api.ActionVerify2FA:
+		res = s.verify2FA(req)
+	case "test-2fa":
+		res = s.test2FA(req)
 	default:
 		res = api.Response{Success: false, Message: "Acción desconocida"}
 	}
 
-	// Enviamos la respuesta en formato JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
-// generateJWT genera un nuevo token JWT para el usuario
+func (s *server) test2FA(req api.Request) api.Response {
+	if req.Username == "" {
+		return api.Response{Success: false, Message: "Username requerido"}
+	}
+
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error cifrando username"}
+	}
+
+	secretEncrypted, err := s.db.Get("totp_secrets", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error obteniendo secreto"}
+	}
+
+	secret, err := decrypt(key, secretEncrypted)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error descifrando secreto"}
+	}
+
+	currentCode, err := totp.GenerateCode(string(secret), time.Now())
+	if err != nil {
+		return api.Response{Success: false, Message: "Error generando código"}
+	}
+
+	return api.Response{
+		Success: true,
+		Message: fmt.Sprintf("Secreto: %s, Código actual: %s", string(secret), currentCode),
+	}
+}
+
 func (s *server) generateJWT(username string) (string, error) {
 	expirationTime := time.Now().Add(s.tokenExp)
 
@@ -140,7 +170,6 @@ func (s *server) generateJWT(username string) (string, error) {
 	return token.SignedString(s.jwtSecret)
 }
 
-// validateJWT verifica si un token JWT es válido
 func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 	claims := &JWTClaims{}
 
@@ -162,24 +191,92 @@ func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 	return claims, nil
 }
 
-// isTokenValid verifica si el token JWT es válido y corresponde al usuario
 func (s *server) isTokenValid(username, tokenString string) bool {
 	claims, err := s.validateJWT(tokenString)
 	if err != nil {
+		s.log.Printf("Error validando token: %v", err)
 		return false
 	}
 
 	return claims.Username == username
 }
 
-// encrypt cifra los datos utilizando AES en modo CTR.
+func (s *server) generateTOTPSecret(username string) (*otp.Key, error) {
+	return totp.Generate(totp.GenerateOpts{
+		Issuer:      s.totpIssuer,
+		AccountName: username,
+		Period:      30,
+		Digits:      otp.DigitsSix,
+		Algorithm:   otp.AlgorithmSHA1,
+	})
+}
+
+func (s *server) validateTOTP(username, code string) (bool, error) {
+	encryptedUsername, err := encrypt(key, []byte(username))
+	if err != nil {
+		s.log.Printf("Error cifrando username: %v", err)
+		return false, err
+	}
+
+	encryptedSecret, err := s.db.Get("totp_secrets", encryptedUsername)
+	if err != nil {
+		s.log.Printf("Error obteniendo secreto TOTP: %v", err)
+		return false, err
+	}
+
+	secret, err := decrypt(key, encryptedSecret)
+	if err != nil {
+		s.log.Printf("Error descifrando secreto: %v", err)
+		return false, err
+	}
+
+	s.log.Printf("Validando código %s con secreto: %s", code, string(secret))
+
+	valid, err := totp.ValidateCustom(
+		code,
+		string(secret),
+		time.Now(),
+		totp.ValidateOpts{
+			Period:    30,
+			Skew:      1,
+			Digits:    otp.DigitsSix,
+			Algorithm: otp.AlgorithmSHA1,
+		},
+	)
+
+	if err != nil {
+		s.log.Printf("Error validando código TOTP: %v", err)
+		return false, err
+	}
+
+	if !valid {
+		currentCode, _ := totp.GenerateCode(string(secret), time.Now())
+		s.log.Printf("Código actual válido sería: %s", currentCode)
+	}
+
+	return valid, nil
+}
+
+func (s *server) getTOTPQRCode(key *otp.Key) ([]byte, error) {
+	var buf bytes.Buffer
+	img, err := key.Image(200, 200)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
 func encrypt(key, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("error al crear cipher: %v", err)
 	}
 
-	// Generar IV determinístico basado en el username
 	iv := make([]byte, aes.BlockSize)
 	hash := sha256.Sum256(plaintext)
 	copy(iv, hash[:aes.BlockSize])
@@ -193,7 +290,6 @@ func encrypt(key, plaintext []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
-// decrypt descifra los datos utilizando AES en modo CTR.
 func decrypt(key, ciphertext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -207,7 +303,6 @@ func decrypt(key, ciphertext []byte) ([]byte, error) {
 	iv := ciphertext[:aes.BlockSize]
 	ciphertext = ciphertext[aes.BlockSize:]
 
-	// Crear un nuevo buffer para el texto plano
 	plaintext := make([]byte, len(ciphertext))
 	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(plaintext, ciphertext)
@@ -215,14 +310,11 @@ func decrypt(key, ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// registerUser registra un nuevo usuario, si no existe.
 func (s *server) registerUser(req api.Request) api.Response {
-	// Validación básica
 	if req.Username == "" || req.Password == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Verificamos si ya existe el usuario en 'auth'
 	exists, err := s.userExists(req.Username)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al verificar usuario"}
@@ -231,34 +323,28 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "El usuario ya existe"}
 	}
 
-	// Generar un salt y hashear la contraseña
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al hashear la contraseña"}
 	}
 
-	// Encriptar el nombre de usuario
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
-	// Almacenamos la contraseña hasheada en el namespace 'auth'
 	if err := s.db.Put("auth", encryptedUsername, hashedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
-	// Almacenamos la clave privada cifrada en el namespace 'prkey'
 	if err := s.db.Put("prkey", encryptedUsername, []byte(req.PriKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave privada"}
 	}
 
-	// Almacenamos la clave publica cifrada en el namespace 'pukey'
 	if err := s.db.Put("pukey", encryptedUsername, []byte(req.PubKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave publica"}
 	}
 
-	// Creamos una entrada vacía para los datos en 'userdata'
 	var listData []string
 	jListdata, err := json.Marshal(listData)
 	if err != nil {
@@ -269,10 +355,45 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
 
-	return api.Response{Success: true, Message: "Usuario registrado"}
+	totpSecret, err := s.generateTOTPSecret(req.Username)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar secreto 2FA"}
+	}
+
+	encryptedSecret, err := encrypt(key, []byte(totpSecret.Secret()))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar secreto 2FA"}
+	}
+
+	if err := s.db.Put("totp_secrets", encryptedUsername, encryptedSecret); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar secreto 2FA"}
+	}
+
+	// Verificar que el secreto se almacenó correctamente
+	storedSecret, err := s.db.Get("totp_secrets", encryptedUsername)
+	if err != nil {
+		s.log.Printf("Error verificando secreto almacenado: %v", err)
+		return api.Response{Success: false, Message: "Error verificando 2FA"}
+	}
+
+	decryptedStored, _ := decrypt(key, storedSecret)
+	s.log.Printf("Secreto almacenado: %s vs generado: %s", string(decryptedStored), totpSecret.Secret())
+
+	qrCode, err := s.getTOTPQRCode(totpSecret)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar QR code 2FA"}
+	}
+
+	return api.Response{
+		Success: true,
+		Message: "Usuario registrado. Escanea el QR con tu app de autenticación",
+		DataMap: map[string]interface{}{
+			"qr_code": base64.StdEncoding.EncodeToString(qrCode),
+			"secret":  totpSecret.Secret(),
+		},
+	}
 }
 
-// loginUser valida credenciales y genera un token JWT.
 func (s *server) loginUser(req api.Request) api.Response {
 	if req.Username == "" || req.Password == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -280,29 +401,146 @@ func (s *server) loginUser(req api.Request) api.Response {
 
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
+		s.log.Printf("Error cifrando username: %v", err)
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
 	hashedPassword, err := s.db.Get("auth", encryptedUsername)
 	if err != nil {
+		s.log.Printf("Error obteniendo hash de contraseña: %v", err)
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
 	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(req.Password)); err != nil {
+		s.log.Printf("Error comparando contraseñas: %v", err)
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
-	// Generar JWT
+	_, err = s.db.Get("totp_secrets", encryptedUsername)
+	if err != nil {
+		s.log.Printf("2FA no configurado para el usuario, procediendo con login normal")
+		tokenString, err := s.generateJWT(req.Username)
+		if err != nil {
+			s.log.Printf("Error generando token JWT: %v", err)
+			return api.Response{Success: false, Message: "Error al generar token JWT"}
+		}
+
+		return api.Response{
+			Success: true,
+			Message: "Login exitoso",
+			Token:   tokenString,
+		}
+	}
+
+	if req.TOTPCode == "" {
+		s.log.Printf("2FA requerido para el usuario %s", req.Username)
+		return api.Response{
+			Success:     true,
+			Message:     "Por favor ingresa tu código de autenticación de dos factores",
+			Requires2FA: true,
+		}
+	}
+
+	valid, err := s.validateTOTP(req.Username, req.TOTPCode)
+	if err != nil {
+		s.log.Printf("Error validando código 2FA: %v", err)
+		return api.Response{Success: false, Message: "Error validando código de autenticación"}
+	}
+	if !valid {
+		return api.Response{Success: false, Message: "Código de autenticación inválido"}
+	}
+
 	tokenString, err := s.generateJWT(req.Username)
 	if err != nil {
+		s.log.Printf("Error generando token JWT: %v", err)
 		return api.Response{Success: false, Message: "Error al generar token JWT"}
 	}
 
 	return api.Response{
 		Success: true,
-		Message: "Login exitoso",
+		Message: "Login exitoso con autenticación en dos factores",
 		Token:   tokenString,
 	}
+}
+
+func (s *server) enable2FA(req api.Request) api.Response {
+	if req.Username == "" || req.Token == "" {
+		return api.Response{Success: false, Message: "Faltan credenciales"}
+	}
+
+	if !s.isTokenValid(req.Username, req.Token) {
+		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+	}
+
+	// Generar nuevo secreto TOTP
+	totpSecret, err := s.generateTOTPSecret(req.Username)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar secreto 2FA"}
+	}
+
+	// Guardar el secreto cifrado
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
+	}
+
+	encryptedSecret, err := encrypt(key, []byte(totpSecret.Secret()))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar secreto 2FA"}
+	}
+
+	if err := s.db.Put("totp_secrets", encryptedUsername, encryptedSecret); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar secreto 2FA"}
+	}
+
+	// Generar QR code
+	qrCode, err := s.getTOTPQRCode(totpSecret)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar QR code 2FA"}
+	}
+
+	return api.Response{
+		Success: true,
+		Message: "2FA habilitado. Escanea el QR con tu app de autenticación",
+		DataMap: map[string]interface{}{
+			"qr_code": base64.StdEncoding.EncodeToString(qrCode),
+			"secret":  totpSecret.Secret(),
+		},
+	}
+}
+
+func (s *server) disable2FA(req api.Request) api.Response {
+	if req.Username == "" || req.Token == "" {
+		return api.Response{Success: false, Message: "Faltan credenciales"}
+	}
+
+	if !s.isTokenValid(req.Username, req.Token) {
+		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+	}
+
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
+	}
+
+	if err := s.db.Delete("totp_secrets", encryptedUsername); err != nil {
+		return api.Response{Success: false, Message: "Error al deshabilitar 2FA"}
+	}
+
+	return api.Response{Success: true, Message: "Autenticación en dos factores deshabilitada"}
+}
+
+func (s *server) verify2FA(req api.Request) api.Response {
+	if req.Username == "" || req.TOTPCode == "" {
+		return api.Response{Success: false, Message: "Faltan credenciales"}
+	}
+
+	valid, err := s.validateTOTP(req.Username, req.TOTPCode)
+	if err != nil || !valid {
+		return api.Response{Success: false, Message: "Código de autenticación inválido 2"}
+	}
+
+	return api.Response{Success: true, Message: "Código de autenticación válido"}
 }
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.

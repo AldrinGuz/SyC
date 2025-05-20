@@ -1,5 +1,4 @@
-// El paquete client contiene la lógica de interacción con el usuario
-// así como de comunicación con el servidor.
+// client.go
 package client
 
 import (
@@ -23,36 +22,25 @@ import (
 	"strconv"
 )
 
-// client estructura interna no exportada que controla
-// el estado de la sesión (usuario, token) y logger.
 type client struct {
 	log         *log.Logger
 	currentUser string
 	authToken   string
 }
 
-// key compuesto por los credenciales de user
 var key []byte
 
-// Run es la única función exportada de este paquete.
-// Crea un client interno y ejecuta el bucle principal.
 func Run() {
-	// Creamos un logger con prefijo 'cli' para identificar
-	// los mensajes en la consola.
 	c := &client{
 		log: log.New(os.Stdout, "[cli] ", log.LstdFlags),
 	}
 	c.runLoop()
 }
 
-// runLoop maneja la lógica del menú principal.
-// Si NO hay usuario logueado, se muestran ciertas opciones;
-// si SÍ hay usuario logueado, se muestran otras.
 func (c *client) runLoop() {
 	for {
 		ui.ClearScreen()
 
-		// Construimos un título que muestre el usuario logueado, si lo hubiera.
 		var title string
 		if c.currentUser == "" {
 			title = "Menú"
@@ -60,64 +48,55 @@ func (c *client) runLoop() {
 			title = fmt.Sprintf("Menú (%s)", c.currentUser)
 		}
 
-		// Generamos las opciones dinámicamente, según si hay un login activo.
 		var options []string
 		if c.currentUser == "" {
-			// Usuario NO logueado: Registro, Login, Salir
 			options = []string{
 				"Registrar usuario",
 				"Iniciar sesión",
 				"Salir",
 			}
 		} else {
-			// Usuario logueado: Ver datos, Actualizar datos, Logout, Salir
 			options = []string{
 				"Ver datos",
 				"Actualizar datos",
+				"Gestionar 2FA",
 				"Cerrar sesión",
 				"Salir",
 			}
 		}
 
-		// Mostramos el menú y obtenemos la elección del usuario.
 		choice := ui.PrintMenu(title, options)
 
-		// Hay que mapear la opción elegida según si está logueado o no.
 		if c.currentUser == "" {
-			// Caso NO logueado
 			switch choice {
 			case 1:
 				c.registerUser()
 			case 2:
 				c.loginUser()
 			case 3:
-				// Opción Salir
 				c.log.Println("Saliendo del cliente...")
 				return
 			}
 		} else {
-			// Caso logueado
 			switch choice {
 			case 1:
 				c.fetchData()
 			case 2:
 				c.addData()
 			case 3:
-				c.logoutUser()
+				c.manage2FA()
 			case 4:
-				// Opción Salir
+				c.logoutUser()
+			case 5:
 				c.log.Println("Saliendo del cliente...")
 				return
 			}
 		}
 
-		// Pausa para que el usuario vea resultados.
 		ui.Pause("Pulsa [Enter] para continuar...")
 	}
 }
 
-// registerUser pide credenciales y las envía al servidor para un registro.
-// Si el registro es exitoso, se intenta el login automático.
 func (c *client) registerUser() {
 	ui.ClearScreen()
 	fmt.Println("** Registro de usuario **")
@@ -125,24 +104,21 @@ func (c *client) registerUser() {
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
 
-	// hash con SHA512 de la contraseña
-	keyClient := sha512.Sum512([]byte(password + username)) //Combinacion de usuario y contraseña para que sea unica dado que las contraseñas puedencoincidir
-	keyLogin := keyClient[:32]                              // una mitad para el login (256 bits)
-	keyData := keyClient[32:64]                             // la otra para los datos (256 bits)
+	keyClient := sha512.Sum512([]byte(password + username))
+	keyLogin := keyClient[:32]
+	keyData := keyClient[32:64]
 
-	// generamos un par de claves (privada, pública) para el servidor
 	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
 	chk(err)
-	pkClient.Precompute() // aceleramos su uso con un precálculo
+	pkClient.Precompute()
 
-	pkJSON, err := json.Marshal(&pkClient) // codificamos con JSON
+	pkJSON, err := json.Marshal(&pkClient)
 	chk(err)
 
-	keyPub := pkClient.Public()           // extraemos la clave pública por separado
-	pubJSON, err := json.Marshal(&keyPub) // y codificamos con JSON
+	keyPub := pkClient.Public()
+	pubJSON, err := json.Marshal(&keyPub)
 	chk(err)
 
-	// Enviamos la acción al servidor
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
 		Username: username,
@@ -151,42 +127,29 @@ func (c *client) registerUser() {
 		PriKey:   encode64(encrypt(compress(pkJSON), keyData)),
 	})
 
-	// Mostramos resultado
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 
-	// Si fue exitoso, probamos loguear automáticamente.
 	if res.Success {
-		c.log.Println("Registro exitoso; intentando login automático...")
-
-		loginRes := c.sendRequest(api.Request{
-			Action:   api.ActionLogin,
-			Username: username,
-			Password: encode64(keyLogin),
-		})
-		if loginRes.Success {
-			fullHash := sha512.Sum512([]byte(password + username))
-			key = fullHash[:24]
-			c.currentUser = username
-			c.authToken = loginRes.Token
-			fmt.Println("Login automático exitoso. Token guardado.")
-		} else {
-			fmt.Println("No se ha podido hacer login automático:", loginRes.Message)
+		// Mostrar QR code y secreto para 2FA (usando DataMap)
+		if res.DataMap != nil {
+			if qrCode, ok := res.DataMap["qr_code"].(string); ok {
+				fmt.Println("\nEscanea este código QR con tu app de autenticación:")
+				fmt.Println(qrCode)
+			}
+			if secret, ok := res.DataMap["secret"].(string); ok {
+				fmt.Println("\nO ingresa este código manualmente:", secret)
+			}
 		}
+
+		c.log.Println("Registro exitoso; intentando login automático...")
+		c.loginUserAfterRegister(username, password)
 	}
 }
 
-// loginUser pide credenciales y realiza un login en el servidor.
-func (c *client) loginUser() {
-	ui.ClearScreen()
-	fmt.Println("** Inicio de sesión **")
-
-	username := ui.ReadInput("Nombre de usuario")
-	password := ui.ReadSecretInput("Contraseña: ")
-
-	// hash con SHA512 de la contraseña
+func (c *client) loginUserAfterRegister(username, password string) {
 	keyClient := sha512.Sum512([]byte(password + username))
-	keyLogin := keyClient[:32] // una mitad para el login (256 bits)
+	keyLogin := keyClient[:32]
 
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionLogin,
@@ -194,10 +157,48 @@ func (c *client) loginUser() {
 		Password: encode64(keyLogin),
 	})
 
+	if res.Success {
+		fullHash := sha512.Sum512([]byte(password + username))
+		key = fullHash[:24]
+		c.currentUser = username
+		c.authToken = res.Token
+		fmt.Println("Login automático exitoso. Token guardado.")
+	} else {
+		fmt.Println("No se ha podido hacer login automático:", res.Message)
+	}
+}
+
+func (c *client) loginUser() {
+	ui.ClearScreen()
+	fmt.Println("** Inicio de sesión **")
+
+	username := ui.ReadInput("Nombre de usuario")
+	password := ui.ReadSecretInput("Contraseña: ")
+
+	keyClient := sha512.Sum512([]byte(password + username))
+	keyLogin := keyClient[:32]
+
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionLogin,
+		Username: username,
+		Password: encode64(keyLogin),
+	})
+
+	if res.Requires2FA {
+		fmt.Println("\nAutenticación en dos factores requerida")
+		code := ui.ReadInput("Ingresa tu código de autenticación: ")
+
+		res = c.sendRequest(api.Request{
+			Action:   api.ActionLogin,
+			Username: username,
+			Password: encode64(keyLogin),
+			TOTPCode: code,
+		})
+	}
+
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 
-	// Si login fue exitoso, guardamos currentUser y el token.
 	if res.Success {
 		fullHash := sha512.Sum512([]byte(password + username))
 		key = fullHash[:24]
@@ -205,6 +206,62 @@ func (c *client) loginUser() {
 		c.authToken = res.Token
 		fmt.Println("Sesión iniciada con éxito. Token guardado.")
 	}
+}
+
+func (c *client) manage2FA() {
+	ui.ClearScreen()
+	fmt.Println("** Gestión de Autenticación en Dos Factores **")
+
+	options := []string{
+		"Habilitar 2FA",
+		"Deshabilitar 2FA",
+		"Volver",
+	}
+
+	choice := ui.PrintMenu("Opciones de 2FA", options)
+
+	switch choice {
+	case 1:
+		c.enable2FA()
+	case 2:
+		c.disable2FA()
+	case 3:
+		return
+	}
+}
+
+func (c *client) enable2FA() {
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionEnable2FA,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
+
+	if res.Success {
+		if res.DataMap != nil {
+			if qrCode, ok := res.DataMap["qr_code"].(string); ok {
+				fmt.Println("\nEscanea este código QR con tu app de autenticación:")
+				fmt.Println(qrCode)
+			}
+			if secret, ok := res.DataMap["secret"].(string); ok {
+				fmt.Println("\nO ingresa este código manualmente:", secret)
+			}
+		}
+	}
+}
+
+func (c *client) disable2FA() {
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionDisable2FA,
+		Username: c.currentUser,
+		Token:    c.authToken,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,
