@@ -64,7 +64,7 @@ func Run(n1 string) error {
 		log:        log.New(os.Stdout, "[srv] ", log.LstdFlags),
 		jwtSecret:  jwtSecret,
 		tokenExp:   tokenExp,
-		totpIssuer: "SyC App",
+		totpIssuer: "SyC App", //Nombre de la empresa
 	}
 
 	defer srv.db.Close()
@@ -110,47 +110,12 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		res = s.enable2FA(req)
 	case api.ActionDisable2FA:
 		res = s.disable2FA(req)
-	case api.ActionVerify2FA:
-		res = s.verify2FA(req)
-	case "test-2fa":
-		res = s.test2FA(req)
 	default:
 		res = api.Response{Success: false, Message: "Acción desconocida"}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-}
-
-func (s *server) test2FA(req api.Request) api.Response {
-	if req.Username == "" {
-		return api.Response{Success: false, Message: "Username requerido"}
-	}
-
-	encryptedUsername, err := encrypt(key, []byte(req.Username))
-	if err != nil {
-		return api.Response{Success: false, Message: "Error cifrando username"}
-	}
-
-	secretEncrypted, err := s.db.Get("totp_secrets", encryptedUsername)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error obteniendo secreto"}
-	}
-
-	secret, err := decrypt(key, secretEncrypted)
-	if err != nil {
-		return api.Response{Success: false, Message: "Error descifrando secreto"}
-	}
-
-	currentCode, err := totp.GenerateCode(string(secret), time.Now())
-	if err != nil {
-		return api.Response{Success: false, Message: "Error generando código"}
-	}
-
-	return api.Response{
-		Success: true,
-		Message: fmt.Sprintf("Secreto: %s, Código actual: %s", string(secret), currentCode),
-	}
 }
 
 func (s *server) generateJWT(username string) (string, error) {
@@ -203,11 +168,11 @@ func (s *server) isTokenValid(username, tokenString string) bool {
 
 func (s *server) generateTOTPSecret(username string) (*otp.Key, error) {
 	return totp.Generate(totp.GenerateOpts{
-		Issuer:      s.totpIssuer,
+		Issuer:      s.totpIssuer, //Nombre de la empresa generadora de totp
 		AccountName: username,
-		Period:      30,
-		Digits:      otp.DigitsSix,
-		Algorithm:   otp.AlgorithmSHA1,
+		Period:      30,                //Tiemppo estimado para la caducidad del código
+		Digits:      otp.DigitsSix,     //Número de dígitos que utilizara el código de tiempo
+		Algorithm:   otp.AlgorithmSHA1, //Algoritmo de cifrado que usara junto con Hash-based Message Authentication Code para generar contraseñas de un solo uso basadas en el tiempo
 	})
 }
 
@@ -229,9 +194,8 @@ func (s *server) validateTOTP(username, code string) (bool, error) {
 		s.log.Printf("Error descifrando secreto: %v", err)
 		return false, err
 	}
-
-	s.log.Printf("Validando código %s con secreto: %s", code, string(secret))
-
+	//currentCode, _ := totp.GenerateCode(string(secret), time.Now())
+	//s.log.Printf("Se esperaba %v", currentCode) ACTIVADO SOLO COMO COMPROBACION
 	valid, err := totp.ValidateCustom(
 		code,
 		string(secret),
@@ -247,11 +211,6 @@ func (s *server) validateTOTP(username, code string) (bool, error) {
 	if err != nil {
 		s.log.Printf("Error validando código TOTP: %v", err)
 		return false, err
-	}
-
-	if !valid {
-		currentCode, _ := totp.GenerateCode(string(secret), time.Now())
-		s.log.Printf("Código actual válido sería: %s", currentCode)
 	}
 
 	return valid, nil
@@ -368,16 +327,6 @@ func (s *server) registerUser(req api.Request) api.Response {
 	if err := s.db.Put("totp_secrets", encryptedUsername, encryptedSecret); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar secreto 2FA"}
 	}
-
-	// Verificar que el secreto se almacenó correctamente
-	storedSecret, err := s.db.Get("totp_secrets", encryptedUsername)
-	if err != nil {
-		s.log.Printf("Error verificando secreto almacenado: %v", err)
-		return api.Response{Success: false, Message: "Error verificando 2FA"}
-	}
-
-	decryptedStored, _ := decrypt(key, storedSecret)
-	s.log.Printf("Secreto almacenado: %s vs generado: %s", string(decryptedStored), totpSecret.Secret())
 
 	qrCode, err := s.getTOTPQRCode(totpSecret)
 	if err != nil {
@@ -528,19 +477,6 @@ func (s *server) disable2FA(req api.Request) api.Response {
 	}
 
 	return api.Response{Success: true, Message: "Autenticación en dos factores deshabilitada"}
-}
-
-func (s *server) verify2FA(req api.Request) api.Response {
-	if req.Username == "" || req.TOTPCode == "" {
-		return api.Response{Success: false, Message: "Faltan credenciales"}
-	}
-
-	valid, err := s.validateTOTP(req.Username, req.TOTPCode)
-	if err != nil || !valid {
-		return api.Response{Success: false, Message: "Código de autenticación inválido 2"}
-	}
-
-	return api.Response{Success: true, Message: "Código de autenticación válido"}
 }
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.

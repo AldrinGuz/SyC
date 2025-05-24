@@ -141,30 +141,6 @@ func (c *client) registerUser() {
 				fmt.Println("\nO ingresa este código manualmente:", secret)
 			}
 		}
-
-		c.log.Println("Registro exitoso; intentando login automático...")
-		c.loginUserAfterRegister(username, password)
-	}
-}
-
-func (c *client) loginUserAfterRegister(username, password string) {
-	keyClient := sha512.Sum512([]byte(password + username))
-	keyLogin := keyClient[:32]
-
-	res := c.sendRequest(api.Request{
-		Action:   api.ActionLogin,
-		Username: username,
-		Password: encode64(keyLogin),
-	})
-
-	if res.Success {
-		fullHash := sha512.Sum512([]byte(password + username))
-		key = fullHash[:24]
-		c.currentUser = username
-		c.authToken = res.Token
-		fmt.Println("Login automático exitoso. Token guardado.")
-	} else {
-		fmt.Println("No se ha podido hacer login automático:", res.Message)
 	}
 }
 
@@ -660,5 +636,5 @@ func unpackData(res api.Response, id int) (int, api.ClinicData) {
 			return posicion, clinicData
 		}
 	}
-	return posicion, api.ClinicData{Name: "Eyo"}
+	return posicion, api.ClinicData{}
 }
