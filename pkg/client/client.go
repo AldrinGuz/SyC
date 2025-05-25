@@ -103,6 +103,7 @@ func (c *client) registerUser() {
 
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
+	nSIP := ui.ReadInput("SIP")
 
 	keyClient := sha512.Sum512([]byte(password + username))
 	keyLogin := keyClient[:32]
@@ -119,12 +120,15 @@ func (c *client) registerUser() {
 	pubJSON, err := json.Marshal(&keyPub)
 	chk(err)
 
+	sip := sha512.Sum512([]byte(nSIP))
+
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
 		Username: username,
 		Password: encode64(keyLogin),
 		PubKey:   encode64(compress(pubJSON)),
 		PriKey:   encode64(encrypt(compress(pkJSON), keyData)),
+		SIP:      encode64(sip[:]),
 	})
 
 	fmt.Println("Éxito:", res.Success)

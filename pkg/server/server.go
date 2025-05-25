@@ -292,6 +292,12 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
+	rol, err := s.userRol(req.SIP, encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al guardar rol " + err.Error()}
+	}
+	s.log.Println("El rol asignado es " + rol.Name)
+
 	if err := s.db.Put("auth", encryptedUsername, hashedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
@@ -563,6 +569,37 @@ func (s *server) userExists(username string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, error) {
+	var rol api.Rol
+	encryptedUserid, err := encrypt(key, []byte(userid))
+	if err != nil {
+		return rol, err
+	}
+
+	userRol, err := s.db.Get("rol", encryptedUserid)
+	if err != nil {
+		if strings.Contains(err.Error(), "bucket no encontrado: rol") || err.Error() == "clave no encontrada: "+string(encryptedUserid) {
+			rol.Name = "patient"
+			rol.Level = 1
+			jRol, err := json.Marshal(rol)
+			if err != nil {
+				return api.Rol{}, err
+			}
+			err = s.db.Put("rol", encryptedUserid, jRol)
+			if err != nil {
+				return api.Rol{}, err
+			}
+			return rol, nil
+		}
+		return rol, err
+	}
+	err = json.Unmarshal(userRol, &rol)
+	if err != nil {
+		return api.Rol{}, err
+	}
+	return rol, nil
 }
 
 func (s *server) getId(api.Request) api.Response {

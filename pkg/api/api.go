@@ -29,6 +29,7 @@ type Request struct {
 	TOTPCode    string `json:"totp_code,omitempty"`    // Código de autenticación de dos factores
 	Action2FA   string `json:"action_2fa,omitempty"`   // Acción específica para 2FA
 	Requires2FA bool   `json:"requires_2fa,omitempty"` // Indica si se requiere 2FA
+	SIP         string `json:"sip,omitempty"`
 }
 
 // Response contiene la respuesta del servidor a las solicitudes
@@ -59,6 +60,11 @@ type ClinicData struct {
 type TwoFASetup struct {
 	QRCode string `json:"qr_code"` // Código QR en base64
 	Secret string `json:"secret"`  // Secreto para configuración manual
+}
+
+type Rol struct {
+	Name  string `json:"name"`
+	Level int    `json:level`
 }
 
 // ErrorResponse crea una respuesta de error estándar
