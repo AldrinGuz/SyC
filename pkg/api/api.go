@@ -41,6 +41,7 @@ type Response struct {
 	ID          int                    `json:"id,omitempty"`           // ID generado
 	Requires2FA bool                   `json:"requires_2fa,omitempty"` // Indica si se requiere 2FA
 	DataMap     map[string]interface{} `json:"data_map,omitempty"`     // Datos adicionales en formato mapa
+	Rol         Rol                    `json:"rol,omitempty"`          // Se le asigna un rol
 }
 
 // ClinicData estructura para los datos médicos
@@ -64,60 +65,5 @@ type TwoFASetup struct {
 
 type Rol struct {
 	Name  string `json:"name"`
-	Level int    `json:level`
-}
-
-// ErrorResponse crea una respuesta de error estándar
-func ErrorResponse(message string) Response {
-	return Response{
-		Success: false,
-		Message: message,
-	}
-}
-
-// SuccessResponse crea una respuesta exitosa estándar
-func SuccessResponse(message string) Response {
-	return Response{
-		Success: true,
-		Message: message,
-	}
-}
-
-// SuccessWithToken crea una respuesta exitosa con token
-func SuccessWithToken(message, token string) Response {
-	return Response{
-		Success: true,
-		Message: message,
-		Token:   token,
-	}
-}
-
-// SuccessWith2FA crea una respuesta que indica que se requiere 2FA
-func SuccessWith2FA(message string) Response {
-	return Response{
-		Success:     true,
-		Message:     message,
-		Requires2FA: true,
-	}
-}
-
-// SuccessWithData crea una respuesta exitosa con datos
-func SuccessWithData(message string, data []string) Response {
-	return Response{
-		Success: true,
-		Message: message,
-		Data:    data,
-	}
-}
-
-// SuccessWith2FASetup crea una respuesta exitosa con datos de configuración 2FA
-func SuccessWith2FASetup(message string, qrCode, secret string) Response {
-	return Response{
-		Success: true,
-		Message: message,
-		DataMap: map[string]interface{}{
-			"qr_code": qrCode,
-			"secret":  secret,
-		},
-	}
+	Level int    `json:"level"`
 }

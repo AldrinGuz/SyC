@@ -26,6 +26,7 @@ type client struct {
 	log         *log.Logger
 	currentUser string
 	authToken   string
+	rol         api.Rol
 }
 
 var key []byte
@@ -184,13 +185,18 @@ func (c *client) loginUser() {
 		key = fullHash[:24]
 		c.currentUser = username
 		c.authToken = res.Token
-		fmt.Println("Sesión iniciada con éxito. Token guardado.")
+		c.rol = res.Rol
+		fmt.Println("Sesión iniciada con éxito. Token guardado. Rol asignado con exito " + res.Rol.Name)
 	}
 }
 
 func (c *client) manage2FA() {
 	ui.ClearScreen()
 	fmt.Println("** Gestión de Autenticación en Dos Factores **")
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return
+	}
 
 	options := []string{
 		"Habilitar 2FA",
@@ -355,6 +361,10 @@ func (c *client) fetchData() {
 func (c *client) addData() {
 	ui.ClearScreen()
 	fmt.Println("** Actualizar datos del usuario **")
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return
+	}
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
@@ -424,6 +434,10 @@ func (c *client) addData() {
 
 func (c *client) modData(res api.Response) {
 	conf := ui.ReadInput("Seguro que deseas modificar el expediente? (S/N)")
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return
+	}
 	if conf == "S" || conf == "s" {
 		if c.currentUser == "" || c.authToken == "" {
 			fmt.Println("No estás logueado. Inicia sesión primero.")
@@ -489,6 +503,10 @@ func (c *client) modData(res api.Response) {
 
 func (c *client) delData(res api.Response) {
 	conf := ui.ReadInput("Seguro que deseas borrar el expediente? (S/N)")
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return
+	}
 	if conf == "S" || conf == "s" {
 		if c.currentUser == "" || c.authToken == "" {
 			fmt.Println("No estás logueado. Inicia sesión primero.")

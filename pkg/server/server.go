@@ -380,10 +380,16 @@ func (s *server) loginUser(req api.Request) api.Response {
 			return api.Response{Success: false, Message: "Error al generar token JWT"}
 		}
 
+		rol, err := s.userRol("", encryptedUsername)
+		if err != nil {
+			return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
+		}
+
 		return api.Response{
 			Success: true,
 			Message: "Login exitoso",
 			Token:   tokenString,
+			Rol:     rol,
 		}
 	}
 
@@ -411,10 +417,16 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al generar token JWT"}
 	}
 
+	rol, err := s.userRol("", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
+	}
+
 	return api.Response{
 		Success: true,
 		Message: "Login exitoso con autenticación en dos factores",
 		Token:   tokenString,
+		Rol:     rol,
 	}
 }
 
@@ -427,6 +439,16 @@ func (s *server) enable2FA(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
+	}
+
+	rol, err := s.userRol("", encryptedUsername)
+	if err != nil || rol.Level < 2 {
+		return api.Response{Success: false, Message: "No tienes los permisos necesarios"}
+	}
+
 	// Generar nuevo secreto TOTP
 	totpSecret, err := s.generateTOTPSecret(req.Username)
 	if err != nil {
@@ -434,11 +456,6 @@ func (s *server) enable2FA(req api.Request) api.Response {
 	}
 
 	// Guardar el secreto cifrado
-	encryptedUsername, err := encrypt(key, []byte(req.Username))
-	if err != nil {
-		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
-	}
-
 	encryptedSecret, err := encrypt(key, []byte(totpSecret.Secret()))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar secreto 2FA"}
@@ -478,6 +495,11 @@ func (s *server) disable2FA(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
 	}
 
+	rol, err := s.userRol("", encryptedUsername)
+	if err != nil || rol.Level < 2 {
+		return api.Response{Success: false, Message: "No tienes los permisos necesarios"}
+	}
+
 	if err := s.db.Delete("totp_secrets", encryptedUsername); err != nil {
 		return api.Response{Success: false, Message: "Error al deshabilitar 2FA"}
 	}
@@ -487,7 +509,7 @@ func (s *server) disable2FA(req api.Request) api.Response {
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
 func (s *server) fetchData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req)
+	listData, res := s.writeUserData(req, 1)
 	if !res.Success {
 		return res
 	}
@@ -502,7 +524,7 @@ func (s *server) fetchData(req api.Request) api.Response {
 // addData cambia el contenido de 'userdata' (los "datos" del usuario)
 // después de validar el token.
 func (s *server) addData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req)
+	listData, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
@@ -527,7 +549,7 @@ func (s *server) logoutUser(req api.Request) api.Response {
 }
 
 func (s *server) modData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req)
+	listData, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
@@ -538,7 +560,7 @@ func (s *server) modData(req api.Request) api.Response {
 }
 
 func (s *server) delData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req)
+	listData, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
@@ -573,6 +595,21 @@ func (s *server) userExists(username string) (bool, error) {
 
 func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, error) {
 	var rol api.Rol
+	if userid == "" {
+		encryptedUserid, err := s.db.Get("gInfo", encryptedUsername)
+		if err != nil {
+			return rol, err
+		}
+		jRol, err := s.db.Get("rol", encryptedUserid)
+		if err != nil {
+			return rol, err
+		}
+		err = json.Unmarshal(jRol, &rol)
+		if err != nil {
+			return api.Rol{}, err
+		}
+		return rol, nil
+	}
 	encryptedUserid, err := encrypt(key, []byte(userid))
 	if err != nil {
 		return rol, err
@@ -588,6 +625,10 @@ func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, erro
 				return api.Rol{}, err
 			}
 			err = s.db.Put("rol", encryptedUserid, jRol)
+			if err != nil {
+				return api.Rol{}, err
+			}
+			err = s.db.Put("gInfo", encryptedUsername, encryptedUserid)
 			if err != nil {
 				return api.Rol{}, err
 			}
@@ -608,7 +649,7 @@ func (s *server) getId(api.Request) api.Response {
 	return api.Response{Success: true, ID: int(n.Int64())}
 }
 
-func (s *server) writeUserData(req api.Request) ([]string, api.Response) {
+func (s *server) writeUserData(req api.Request, accessLevel int) ([]string, api.Response) {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
 		return nil, api.Response{Success: false, Message: "Faltan credenciales"}
@@ -622,6 +663,11 @@ func (s *server) writeUserData(req api.Request) ([]string, api.Response) {
 
 	if !s.isTokenValid(req.Username, req.Token) {
 		return nil, api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+	}
+
+	rol, err := s.userRol("", encryptedUsername)
+	if err != nil || rol.Level < accessLevel {
+		return nil, api.Response{Success: false, Message: "No tienes los permisos necesarios"}
 	}
 
 	// Obtenemos los datos asociados al usuario desde 'userdata'
