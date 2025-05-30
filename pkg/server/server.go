@@ -292,7 +292,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
-	rol, err := s.userRol(req.SIP, encryptedUsername)
+	rol, err := s.createRol(req.SIP, encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al guardar rol " + err.Error()}
 	}
@@ -318,6 +318,9 @@ func (s *server) registerUser(req api.Request) api.Response {
 	encryptedList, err := encrypt(key, jListdata)
 	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
+	}
+	if err := s.db.Put("userkeys", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al añadir las keys de usuario"}
 	}
 
 	totpSecret, err := s.generateTOTPSecret(req.Username)
@@ -380,7 +383,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 			return api.Response{Success: false, Message: "Error al generar token JWT"}
 		}
 
-		rol, err := s.userRol("", encryptedUsername)
+		rol, err := s.userRol(encryptedUsername)
 		if err != nil {
 			return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
 		}
@@ -417,7 +420,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al generar token JWT"}
 	}
 
-	rol, err := s.userRol("", encryptedUsername)
+	rol, err := s.userRol(encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
 	}
@@ -444,7 +447,7 @@ func (s *server) enable2FA(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
 	}
 
-	rol, err := s.userRol("", encryptedUsername)
+	rol, err := s.userRol(encryptedUsername)
 	if err != nil || rol.Level < 2 {
 		return api.Response{Success: false, Message: "No tienes los permisos necesarios"}
 	}
@@ -495,7 +498,7 @@ func (s *server) disable2FA(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al cifrar nombre de usuario"}
 	}
 
-	rol, err := s.userRol("", encryptedUsername)
+	rol, err := s.userRol(encryptedUsername)
 	if err != nil || rol.Level < 2 {
 		return api.Response{Success: false, Message: "No tienes los permisos necesarios"}
 	}
@@ -509,7 +512,7 @@ func (s *server) disable2FA(req api.Request) api.Response {
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
 func (s *server) fetchData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req, 1)
+	listData, listKeys, res := s.writeUserData(req, 1)
 	if !res.Success {
 		return res
 	}
@@ -518,21 +521,23 @@ func (s *server) fetchData(req api.Request) api.Response {
 		Success: true,
 		Message: "Datos privados de " + req.Username,
 		Data:    listData,
+		Keys:    listKeys,
 	}
 }
 
 // addData cambia el contenido de 'userdata' (los "datos" del usuario)
 // después de validar el token.
 func (s *server) addData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req, 2)
+	listData, listKeys, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
 
 	// Añadimos elemento a la lista
 	listData = append(listData, req.Data)
+	listKeys = append(listKeys, req.PriKey)
 
-	return s.closeUserData(listData, req, "Datos de usuario actualizados")
+	return s.closeUserData(listData, listKeys, req, "Datos de usuario actualizados")
 }
 
 // logoutUser invalida el token (en el cliente)
@@ -549,26 +554,28 @@ func (s *server) logoutUser(req api.Request) api.Response {
 }
 
 func (s *server) modData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req, 2)
+	listData, listKeys, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
 	// Añadimos elemento a la lista
 	listData[req.Position] = req.Data
+	listKeys[req.Position] = req.PriKey
 
-	return s.closeUserData(listData, req, "El expediente ha sido modificado con exito")
+	return s.closeUserData(listData, listKeys, req, "El expediente ha sido modificado con exito")
 }
 
 func (s *server) delData(req api.Request) api.Response {
-	listData, res := s.writeUserData(req, 2)
+	listData, listKeys, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
 
 	// Añadimos elemento a la lista
 	listData = append(listData[:req.Position], listData[req.Position+1:]...)
+	listKeys = append(listKeys[:req.Position], listKeys[req.Position+1:]...)
 
-	return s.closeUserData(listData, req, "El expediente ha sido eliminado con exito")
+	return s.closeUserData(listData, listKeys, req, "El expediente ha sido eliminado con exito")
 }
 
 // userExists comprueba si existe un usuario con la clave 'username'
@@ -593,30 +600,18 @@ func (s *server) userExists(username string) (bool, error) {
 	return true, nil
 }
 
-func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, error) {
+// Crea el rol en funcion del sip, el administrador puede modificar el nivel y la autorización
+func (s *server) createRol(userid string, encryptedUsername []byte) (api.Rol, error) {
 	var rol api.Rol
-	if userid == "" {
-		encryptedUserid, err := s.db.Get("gInfo", encryptedUsername)
-		if err != nil {
-			return rol, err
-		}
-		jRol, err := s.db.Get("rol", encryptedUserid)
-		if err != nil {
-			return rol, err
-		}
-		err = json.Unmarshal(jRol, &rol)
-		if err != nil {
-			return api.Rol{}, err
-		}
-		return rol, nil
-	}
+	// Encripta la cadena con la key del servidor
 	encryptedUserid, err := encrypt(key, []byte(userid))
 	if err != nil {
 		return rol, err
 	}
-
+	// Hace una llamada a db
 	userRol, err := s.db.Get("rol", encryptedUserid)
 	if err != nil {
+		// Si no exite la carpeta rol o no tiene registrado el sip doblemente encriptado crea un rol por defecto para el sip
 		if strings.Contains(err.Error(), "bucket no encontrado: rol") || err.Error() == "clave no encontrada: "+string(encryptedUserid) {
 			rol.Name = "patient"
 			rol.Level = 1
@@ -624,11 +619,11 @@ func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, erro
 			if err != nil {
 				return api.Rol{}, err
 			}
-			err = s.db.Put("rol", encryptedUserid, jRol)
+			err = s.db.Put("rol", encryptedUserid, jRol) // Añade el sip y el rol en la carpeta rol
 			if err != nil {
 				return api.Rol{}, err
 			}
-			err = s.db.Put("gInfo", encryptedUsername, encryptedUserid)
+			err = s.db.Put("gInfo", encryptedUsername, encryptedUserid) // Añade el usuario a sociado a el sip en la carpeta gInfo
 			if err != nil {
 				return api.Rol{}, err
 			}
@@ -636,7 +631,30 @@ func (s *server) userRol(userid string, encryptedUsername []byte) (api.Rol, erro
 		}
 		return rol, err
 	}
+	// Si encuentra un rol asignado al sip devuelve el rol y asigna el usuario al sip
 	err = json.Unmarshal(userRol, &rol)
+	if err != nil {
+		return api.Rol{}, err
+	}
+	err = s.db.Put("gInfo", encryptedUsername, encryptedUserid) // Añade el usuario a sociado a el sip en la carpeta gInfo
+	if err != nil {
+		return api.Rol{}, err
+	}
+	return rol, nil
+}
+
+// Obtiene el rol del usuario segun el sip asociado a el
+func (s *server) userRol(encryptedUsername []byte) (api.Rol, error) {
+	var rol api.Rol
+	encryptedUserid, err := s.db.Get("gInfo", encryptedUsername) // Obtiene el sip doblemente encriptado
+	if err != nil {
+		return rol, err
+	}
+	jRol, err := s.db.Get("rol", encryptedUserid) // Obtiene el rol
+	if err != nil {
+		return rol, err
+	}
+	err = json.Unmarshal(jRol, &rol) // Lo transforma nuevamente a struct
 	if err != nil {
 		return api.Rol{}, err
 	}
@@ -649,57 +667,88 @@ func (s *server) getId(api.Request) api.Response {
 	return api.Response{Success: true, ID: int(n.Int64())}
 }
 
-func (s *server) writeUserData(req api.Request, accessLevel int) ([]string, api.Response) {
+func (s *server) writeUserData(req api.Request, accessLevel int) ([]string, []string, api.Response) {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
-		return nil, api.Response{Success: false, Message: "Faltan credenciales"}
+		return nil, nil, api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
-		return nil, api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+		return nil, nil, api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
 	}
 
 	if !s.isTokenValid(req.Username, req.Token) {
-		return nil, api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+		return nil, nil, api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
-	rol, err := s.userRol("", encryptedUsername)
+	rol, err := s.userRol(encryptedUsername)
 	if err != nil || rol.Level < accessLevel {
-		return nil, api.Response{Success: false, Message: "No tienes los permisos necesarios"}
+		return nil, nil, api.Response{Success: false, Message: "No tienes los permisos necesarios"}
 	}
 
 	// Obtenemos los datos asociados al usuario desde 'userdata'
 	rawData, err := s.db.Get("userdata", encryptedUsername)
 	if err != nil {
-		return nil, api.Response{Success: false, Message: "Error al obtener datos del usuario"}
+		return nil, nil, api.Response{Success: false, Message: "Error al obtener datos del usuario 3"}
 	}
 
 	// Si no hay datos
 	if len(rawData) < 1 {
-		return nil, api.Response{Success: false, Message: "No hay datos disponibles"}
+		return nil, nil, api.Response{Success: false, Message: "No hay datos disponibles"}
 	}
 
 	// Desencriptar los datos del usuario
 	jListData, err := decrypt(key, rawData)
 	if err != nil {
-		return nil, api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+		return nil, nil, api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
 	}
 
 	// Convertimos a lista string
 	var listData []string
 	json.Unmarshal(jListData, &listData)
 
-	return listData, api.Response{Success: true}
-}
-
-func (s *server) closeUserData(listData []string, req api.Request, message string) api.Response {
-	// Chequeo de credenciales
-	if req.Username == "" || req.Token == "" {
-		return api.Response{Success: false, Message: "Faltan credenciales"}
+	listkeys, res := s.writeUserK(req)
+	if !res.Success {
+		return nil, nil, res
 	}
 
+	return listData, listkeys, api.Response{Success: true}
+}
+
+func (s *server) writeUserK(req api.Request) ([]string, api.Response) {
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return nil, api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	// Obtenemos los datos asociados al usuario desde 'userdata'
+	rawKeys, err := s.db.Get("userkeys", encryptedUsername)
+	if err != nil {
+		return nil, api.Response{Success: false, Message: "Error al obtener datos del usuario 4"}
+	}
+
+	// Si no hay datos
+	if len(rawKeys) < 1 {
+		return nil, api.Response{Success: false, Message: "No hay datos disponibles"}
+	}
+
+	// Desencriptar los datos del usuario
+	jListKeys, err := decrypt(key, rawKeys)
+	if err != nil {
+		return nil, api.Response{Success: false, Message: "Error al desencriptar los datos del usuario"}
+	}
+
+	// Convertimos a lista string
+	var listKeys []string
+	json.Unmarshal(jListKeys, &listKeys)
+
+	return listKeys, api.Response{Success: true}
+}
+
+func (s *server) closeUserData(listData, listKeys []string, req api.Request, message string) api.Response {
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
@@ -717,6 +766,24 @@ func (s *server) closeUserData(listData []string, req api.Request, message strin
 	encryptedList, err := encrypt(key, jListdata)
 	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
+	}
+	return s.closeUserK(listKeys, req, message)
+}
+func (s *server) closeUserK(listKeys []string, req api.Request, message string) api.Response {
+	// Encriptar el nombre de usuario para buscar en la base de datos
+	encryptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar el nombre de usuario"}
+	}
+
+	// Encriptar los datos del usuario antes de almacenarlos
+	jListdata, err := json.Marshal(listKeys)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, err := encrypt(key, jListdata)
+	if err := s.db.Put("userkeys", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al añadir las keys de usuario"}
 	}
 	return api.Response{Success: true, Message: message}
 }

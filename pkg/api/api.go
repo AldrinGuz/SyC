@@ -42,6 +42,7 @@ type Response struct {
 	Requires2FA bool                   `json:"requires_2fa,omitempty"` // Indica si se requiere 2FA
 	DataMap     map[string]interface{} `json:"data_map,omitempty"`     // Datos adicionales en formato mapa
 	Rol         Rol                    `json:"rol,omitempty"`          // Se le asigna un rol
+	Keys        []string               `json:"keys,omitempty"`         // Solicita las llaves para desencriptar los exp
 }
 
 // ClinicData estructura para los datos médicos

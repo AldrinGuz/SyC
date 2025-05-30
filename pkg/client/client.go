@@ -27,6 +27,7 @@ type client struct {
 	currentUser string
 	authToken   string
 	rol         api.Rol
+	keys        []string
 }
 
 var key []byte
@@ -104,7 +105,7 @@ func (c *client) registerUser() {
 
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
-	nSIP := ui.ReadInput("SIP")
+	SIP := ui.ReadInt("SIP")
 
 	keyClient := sha512.Sum512([]byte(password + username))
 	keyLogin := keyClient[:32]
@@ -121,7 +122,7 @@ func (c *client) registerUser() {
 	pubJSON, err := json.Marshal(&keyPub)
 	chk(err)
 
-	sip := sha512.Sum512([]byte(nSIP))
+	sip := sha512.Sum512([]byte(strconv.Itoa(SIP))) // Datos en bruto se reconvierten con string()
 
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
@@ -186,6 +187,7 @@ func (c *client) loginUser() {
 		c.currentUser = username
 		c.authToken = res.Token
 		c.rol = res.Rol
+		c.keys = res.Keys
 		fmt.Println("Sesión iniciada con éxito. Token guardado. Rol asignado con exito " + res.Rol.Name)
 	}
 }
@@ -309,13 +311,16 @@ func (c *client) fetchData() {
 	if res.Success {
 		// Recibimos la lista de datos
 		dataList := res.Data
+		keyList := res.Keys
 
 		for i, data := range dataList {
 			// Convertimos a []byte
 			encryptedData := decode64(data)
+			encryptedKey := decode64(keyList[i])
 
 			// Desencriptamos
-			compr := decrypt(encryptedData, key) // Descomprimimos
+			fullhash := decrypt(encryptedKey, key)
+			compr := decrypt(encryptedData, fullhash[:32]) // Descomprimimos
 			jData := decompress(compr)
 
 			// Convertimos a struct
@@ -413,7 +418,7 @@ func (c *client) addData() {
 		key = nil
 		return
 	}
-	data := packData(newData)
+	data, newKey := packData(newData)
 
 	// Enviamos la solicitud de actualización
 	res2 := c.sendRequest(api.Request{
@@ -421,6 +426,7 @@ func (c *client) addData() {
 		Username: c.currentUser,
 		Token:    c.authToken,
 		Data:     data,
+		PriKey:   newKey,
 	})
 
 	fmt.Println("Éxito:", res2.Success)
@@ -477,7 +483,7 @@ func (c *client) modData(res api.Response) {
 		newData.Motivo = ui.ReadInput("Motivo " + newData.Motivo)
 		newData.Enfermedad = ui.ReadInput("Enfermedad " + newData.Enfermedad)
 
-		sendData := packData(newData)
+		sendData, sendKey := packData(newData)
 
 		// Enviamos la solicitud de actualización
 		res := c.sendRequest(api.Request{
@@ -486,6 +492,7 @@ func (c *client) modData(res api.Response) {
 			Token:    c.authToken,
 			Data:     sendData,
 			Position: posicion,
+			PriKey:   sendKey,
 		})
 
 		fmt.Println("Éxito:", res.Success)
@@ -633,25 +640,30 @@ func decompress(data []byte) []byte {
 }
 
 // función prepara el dato para su envio
-func packData(Data api.ClinicData) string {
+func packData(Data api.ClinicData) (string, string) {
 	jData, err := json.Marshal(Data) // Convertimos a JSON
 	if err != nil {
 		fmt.Println("Error en Marshal 315")
-		return ""
+		return "", ""
 	}
-	compr := compress(jData)             // Comprimimos
-	encriptedData := encrypt(compr, key) // Encryptamos
-	sendData := encode64(encriptedData)  // Conversion a string
-	return sendData
+	compr := compress(jData) // Comprimimos
+	fullhash := sha512.Sum512([]byte(strconv.Itoa(Data.SIP)))
+	encriptedData := encrypt(compr, fullhash[:32]) // Encryptamos los datos
+	encriptedHash := encrypt(fullhash[:], key)     // Encryptamos el hash
+	sendData := encode64(encriptedData)            // Conversion a string
+	sendKey := encode64(encriptedHash)
+	return sendData, sendKey
 }
 func unpackData(res api.Response, id int) (int, api.ClinicData) {
 	posicion := -1
 	// Recibimos la lista de datos
 	for i, data := range res.Data {
-		encryptedData := decode64(data)      // Convertimos a []byte
-		compr := decrypt(encryptedData, key) // Desencriptamos
-		jData := decompress(compr)           // Descomprimimos
-		var clinicData api.ClinicData        // Convertimos a struct
+		encryptedData := decode64(data) // Convertimos a []byte
+		encryptedKey := decode64(res.Keys[i])
+		fullhash := decrypt(encryptedKey, key)
+		compr := decrypt(encryptedData, fullhash[:32]) // Desencriptamos
+		jData := decompress(compr)                     // Descomprimimos
+		var clinicData api.ClinicData                  // Convertimos a struct
 		json.Unmarshal(jData, &clinicData)
 		if id == clinicData.ID { // Condicion
 			posicion = i
