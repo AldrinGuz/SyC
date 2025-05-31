@@ -312,31 +312,59 @@ func (c *client) fetchData() {
 		// Recibimos la lista de datos
 		dataList := res.Data
 		keyList := res.Keys
+		// Si es paciente
+		if c.rol.Name == "patient" {
+			for i, data := range dataList {
+				// Convertimos a []byte
+				encryptedData := decode64(data)
+				fullhash := decode64(c.keys[0])
 
-		for i, data := range dataList {
-			// Convertimos a []byte
-			encryptedData := decode64(data)
-			encryptedKey := decode64(keyList[i])
+				// Desencriptamos
+				compr := decrypt(encryptedData, fullhash[:32]) // Descomprimimos
+				jData := decompress(compr)
 
-			// Desencriptamos
-			fullhash := decrypt(encryptedKey, key)
-			compr := decrypt(encryptedData, fullhash[:32]) // Descomprimimos
-			jData := decompress(compr)
+				// Convertimos a struct
+				var clinicData api.ClinicData
+				json.Unmarshal(jData, &clinicData)
+				fmt.Println("----------------------")
+				fmt.Println("Paciente N: ", i+1)
+				fmt.Println("ID: ", clinicData.ID)
+				fmt.Println("Nombre: ", clinicData.Name)
+				fmt.Println("Apellidos: ", clinicData.SureName)
+				fmt.Println("Edad: ", clinicData.Edad)
+				fmt.Println("Sexo: ", clinicData.Sexo)
+				fmt.Println("SIP: ", clinicData.SIP)
+				fmt.Println("Procedencia: ", clinicData.Procedencia)
+				fmt.Println("Motivo: ", clinicData.Motivo)
+				fmt.Println("Enfermedad: ", clinicData.Enfermedad)
+			}
+		}
+		if c.rol.Name == "doctor" {
+			for i, data := range dataList {
+				// Convertimos a []byte
+				encryptedData := decode64(data)
+				encryptedKey := decode64(keyList[i])
 
-			// Convertimos a struct
-			var clinicData api.ClinicData
-			json.Unmarshal(jData, &clinicData)
-			fmt.Println("----------------------")
-			fmt.Println("Paciente N: ", i+1)
-			fmt.Println("ID: ", clinicData.ID)
-			fmt.Println("Nombre: ", clinicData.Name)
-			fmt.Println("Apellidos: ", clinicData.SureName)
-			fmt.Println("Edad: ", clinicData.Edad)
-			fmt.Println("Sexo: ", clinicData.Sexo)
-			fmt.Println("SIP: ", clinicData.SIP)
-			fmt.Println("Procedencia: ", clinicData.Procedencia)
-			fmt.Println("Motivo: ", clinicData.Motivo)
-			fmt.Println("Enfermedad: ", clinicData.Enfermedad)
+				// Desencriptamos
+				fullhash := decrypt(encryptedKey, key)
+				compr := decrypt(encryptedData, fullhash[:32]) // Descomprimimos
+				jData := decompress(compr)
+
+				// Convertimos a struct
+				var clinicData api.ClinicData
+				json.Unmarshal(jData, &clinicData)
+				fmt.Println("----------------------")
+				fmt.Println("Paciente N: ", i+1)
+				fmt.Println("ID: ", clinicData.ID)
+				fmt.Println("Nombre: ", clinicData.Name)
+				fmt.Println("Apellidos: ", clinicData.SureName)
+				fmt.Println("Edad: ", clinicData.Edad)
+				fmt.Println("Sexo: ", clinicData.Sexo)
+				fmt.Println("SIP: ", clinicData.SIP)
+				fmt.Println("Procedencia: ", clinicData.Procedencia)
+				fmt.Println("Motivo: ", clinicData.Motivo)
+				fmt.Println("Enfermedad: ", clinicData.Enfermedad)
+			}
 		}
 		if len(res.Data) > 0 {
 			for {
@@ -640,18 +668,21 @@ func decompress(data []byte) []byte {
 }
 
 // función prepara el dato para su envio
-func packData(Data api.ClinicData) (string, string) {
+func packData(Data api.ClinicData) ([]string, string) {
+	var sendData []string
 	jData, err := json.Marshal(Data) // Convertimos a JSON
 	if err != nil {
 		fmt.Println("Error en Marshal 315")
-		return "", ""
+		return nil, ""
 	}
 	compr := compress(jData) // Comprimimos
 	fullhash := sha512.Sum512([]byte(strconv.Itoa(Data.SIP)))
-	encriptedData := encrypt(compr, fullhash[:32]) // Encryptamos los datos
-	encriptedHash := encrypt(fullhash[:], key)     // Encryptamos el hash
-	sendData := encode64(encriptedData)            // Conversion a string
+	encriptedData := encrypt(compr, fullhash[:32])           // Encryptamos los datos
+	encriptedIdent := encrypt([]byte("user"), fullhash[:32]) // Encryptamos los datos
+	encriptedHash := encrypt(fullhash[:], key)               // Encryptamos el hash
+	dataSend := encode64(encriptedData)                      // Conversion a string
 	sendKey := encode64(encriptedHash)
+	sendData = append(sendData, encode64(encriptedIdent), dataSend)
 	return sendData, sendKey
 }
 func unpackData(res api.Response, id int) (int, api.ClinicData) {

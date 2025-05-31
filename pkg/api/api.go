@@ -18,18 +18,18 @@ const (
 
 // Request contiene todos los campos posibles para las solicitudes al servidor
 type Request struct {
-	Action      string `json:"action"`                 // Acción a realizar
-	Username    string `json:"username"`               // Nombre de usuario
-	Password    string `json:"password,omitempty"`     // Contraseña (omitida en algunas acciones)
-	Token       string `json:"token,omitempty"`        // Token de autenticación
-	Data        string `json:"data,omitempty"`         // Datos adicionales
-	PubKey      string `json:"pubKey,omitempty"`       // Clave pública
-	PriKey      string `json:"priKey,omitempty"`       // Clave privada
-	Position    int    `json:"position,omitempty"`     // Posición en listas
-	TOTPCode    string `json:"totp_code,omitempty"`    // Código de autenticación de dos factores
-	Action2FA   string `json:"action_2fa,omitempty"`   // Acción específica para 2FA
-	Requires2FA bool   `json:"requires_2fa,omitempty"` // Indica si se requiere 2FA
-	SIP         string `json:"sip,omitempty"`
+	Action      string   `json:"action"`                 // Acción a realizar
+	Username    string   `json:"username"`               // Nombre de usuario
+	Password    string   `json:"password,omitempty"`     // Contraseña (omitida en algunas acciones)
+	Token       string   `json:"token,omitempty"`        // Token de autenticación
+	Data        []string `json:"data,omitempty"`         // Datos adicionales
+	PubKey      string   `json:"pubKey,omitempty"`       // Clave pública
+	PriKey      string   `json:"priKey,omitempty"`       // Clave privada
+	Position    int      `json:"position,omitempty"`     // Posición en listas
+	TOTPCode    string   `json:"totp_code,omitempty"`    // Código de autenticación de dos factores
+	Action2FA   string   `json:"action_2fa,omitempty"`   // Acción específica para 2FA
+	Requires2FA bool     `json:"requires_2fa,omitempty"` // Indica si se requiere 2FA
+	SIP         string   `json:"sip,omitempty"`
 }
 
 // Response contiene la respuesta del servidor a las solicitudes

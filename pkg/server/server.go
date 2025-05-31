@@ -316,11 +316,17 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al crear list[]"}
 	}
 	encryptedList, err := encrypt(key, jListdata)
-	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
-		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
-	}
 	if err := s.db.Put("userkeys", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al añadir las keys de usuario"}
+	}
+	var otherList [][]string
+	jListdata, err = json.Marshal(otherList)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al crear list[]"}
+	}
+	encryptedList, _ = encrypt(key, jListdata)
+	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
+		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
 
 	totpSecret, err := s.generateTOTPSecret(req.Username)
@@ -374,6 +380,15 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
+	encriptedId, err := s.db.Get("gInfo", encryptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener el userID en gInfo"}
+	}
+	byteUserID, err := decrypt(key, encriptedId)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al desencriptar el userID"}
+	}
+
 	_, err = s.db.Get("totp_secrets", encryptedUsername)
 	if err != nil {
 		s.log.Printf("2FA no configurado para el usuario, procediendo con login normal")
@@ -393,6 +408,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 			Message: "Login exitoso",
 			Token:   tokenString,
 			Rol:     rol,
+			Keys:    []string{string(byteUserID)},
 		}
 	}
 
@@ -430,6 +446,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 		Message: "Login exitoso con autenticación en dos factores",
 		Token:   tokenString,
 		Rol:     rol,
+		Keys:    []string{string(byteUserID)},
 	}
 }
 
@@ -512,15 +529,63 @@ func (s *server) disable2FA(req api.Request) api.Response {
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
 func (s *server) fetchData(req api.Request) api.Response {
-	listData, listKeys, res := s.writeUserData(req, 1)
-	if !res.Success {
-		return res
+	var sendData []string
+	var listKeys []string
+	var listData [][]string
+	var res api.Response
+
+	encriptedUsername, err := encrypt(key, []byte(req.Username))
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al encriptar el username"}
+	}
+	rol, err := s.userRol(encriptedUsername)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al obtener el rol del usuario"}
+	}
+	if rol.Level == 1 {
+		encriptedId, err := s.db.Get("gInfo", encriptedUsername)
+		if err != nil {
+			return api.Response{Success: false, Message: "Error al obtener el userID en gInfo"}
+		}
+		byteUserID, err := decrypt(key, encriptedId)
+		if err != nil {
+			return api.Response{Success: false, Message: "Error al desencriptar el userID"}
+		}
+		fullhash, err := base64.StdEncoding.DecodeString(string(byteUserID)) // el fullhash es el correcto
+		if err != nil {
+			return api.Response{Success: false, Message: "Error al obtener la key de user"}
+		}
+		listDoctor, err := s.db.ListKeys("auth")
+		if err != nil {
+			return api.Response{Success: false, Message: "Error al obtener la lista de médicos"}
+		}
+		var listOfUserdata [][]string
+		for _, doctor := range listDoctor { // Recorre la lista con []byte que son los username encriptados
+			list, _ := s.db.Get("userdata", doctor)    // Los utiliza para buscar en userdata devuelve un []byte
+			jListData, _ := decrypt(key, list)         // []byte son los datos que al desencriptar []byte
+			json.Unmarshal(jListData, &listOfUserdata) // []byte hay que transformarlo en [][]string
+			for _, data := range listOfUserdata {      // de la lista buscamos de cada []string el primer elemento
+				encriptedIdent, _ := base64.StdEncoding.DecodeString(data[0])
+				byteIdent := comprobador(encriptedIdent, fullhash[:32])
+				if string(byteIdent) == "user" {
+					sendData = append(sendData, data[1])
+				}
+			}
+		}
+	} else {
+		listData, listKeys, res = s.writeUserData(req, 1)
+		if !res.Success {
+			return res
+		}
+		for _, data := range listData {
+			sendData = append(sendData, data[1])
+		}
 	}
 
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    listData,
+		Data:    sendData,
 		Keys:    listKeys,
 	}
 }
@@ -667,7 +732,7 @@ func (s *server) getId(api.Request) api.Response {
 	return api.Response{Success: true, ID: int(n.Int64())}
 }
 
-func (s *server) writeUserData(req api.Request, accessLevel int) ([]string, []string, api.Response) {
+func (s *server) writeUserData(req api.Request, accessLevel int) ([][]string, []string, api.Response) {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
 		return nil, nil, api.Response{Success: false, Message: "Faltan credenciales"}
@@ -706,7 +771,7 @@ func (s *server) writeUserData(req api.Request, accessLevel int) ([]string, []st
 	}
 
 	// Convertimos a lista string
-	var listData []string
+	var listData [][]string
 	json.Unmarshal(jListData, &listData)
 
 	listkeys, res := s.writeUserK(req)
@@ -748,7 +813,7 @@ func (s *server) writeUserK(req api.Request) ([]string, api.Response) {
 	return listKeys, api.Response{Success: true}
 }
 
-func (s *server) closeUserData(listData, listKeys []string, req api.Request, message string) api.Response {
+func (s *server) closeUserData(listData [][]string, listKeys []string, req api.Request, message string) api.Response {
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
 	if err != nil {
@@ -786,4 +851,20 @@ func (s *server) closeUserK(listKeys []string, req api.Request, message string) 
 		return api.Response{Success: false, Message: "Error al añadir las keys de usuario"}
 	}
 	return api.Response{Success: true, Message: message}
+}
+
+// función para cifrar (con AES en este caso), adjunta el IV al principio
+func comprobador(data, key []byte) (out []byte) {
+	if len(data) < 16 {
+		return
+	}
+	out = make([]byte, len(data)-16) // la salida no va a tener el IV
+	blk, err := aes.NewCipher(key)   // cifrador en bloque (AES), usa key
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	ctr := cipher.NewCTR(blk, data[:16]) // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out, data[16:])     // desciframos (doble cifrado) los datos
+	return
 }
