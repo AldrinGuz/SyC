@@ -17,6 +17,7 @@ document.querySelector('#app').innerHTML = `
     </div>
 `;
 
+let rol;
 window.loggin = function () {
     let name = document.getElementById("name").value;
     let pass = document.getElementById("password").value;
@@ -34,7 +35,18 @@ window.loggin = function () {
     try {
         App.Loggin(name,pass)
             .then((result) => {
-                if (result == true){
+                if (result == "Requiere 2FA"){
+                    user1 = name;
+                    pass1 = pass;
+                    panel('2FA');
+                }else if (result.includes("Autorizado")){
+                    if(result.includes("patient")){
+                        rol = "patient"
+                    }else{
+                        rol = "doctor"
+                    }
+                    user1 = ""
+                    pass1 = ""
                     panel('main');
                 }else{
                     errorWindow("No se ha podido logear el usuario");
@@ -47,10 +59,34 @@ window.loggin = function () {
         console.error(err);
     }
 };
+let user1
+let pass1
+window.auth2FA = function() {
+    let code = document.getElementById("data").value;
+    try {
+        App.Auth2FA(user1,pass1,code).then((result)=>{
+            if(result.includes("Autorizado")){
+                if(result.includes("patient")){
+                    rol = "patient"
+                }else{
+                    rol = "doctor"
+                }
+                user1 = ""
+                pass1 = ""
+                panel('main')
+            }else{
+                errorWindow("Código incorrecto")
+            }
+        })
+    } catch (error) {
+        console.error(error);
+    }    
+}
 window.register = function(){
     let name = document.getElementById("name").value;
     let pass = document.getElementById("password").value;
     let rep = document.getElementById("repPassword").value;
+    let sip = document.getElementById("SIP").value;
 
     // Check if the input is empty
     if (name === ""){
@@ -61,18 +97,34 @@ window.register = function(){
         errorWindow("Falta la contraseña.");
         return;
     };
+    if (sip === ""){
+        errorWindow("Falta el SIP.");
+        return;
+    };
     if (rep != pass){
         errorWindow("Las contraseñas no coinciden.");
     }
 
+    let numSIP = parseInt(sip)
     try{
-        App.Register(name,pass).then((result)=>{
-            if (result == true){
-                panel('main');
-            }else{
-                errorWindow("No se ha posidido registrar ese usuario");
+        App.Register(name, pass, numSIP).then((result) => {
+            if (result != "") {
+                panel('TOTP');
+                let QR = document.getElementById("QRcode");
+                
+                // Crear un elemento img
+                let img = document.createElement("img");
+                
+                // Asignar los datos de la imagen (asumiendo que result es base64)
+                img.src = "data:image/png;base64," + result; // Cambia "png" por el formato correcto si es necesario
+                
+                // Limpiar el div y añadir la imagen
+                QR.innerHTML = "";
+                QR.appendChild(img);
+            } else {
+                errorWindow("No se ha podido registrar ese usuario");
             }
-        })
+        });
     }catch(err){
         console.error(err);
     }
@@ -170,16 +222,18 @@ window.getData = function(){
                 for (let i = 0; i < dataList.length; i++) {
                     var data = dataList[i];
                     var node = document.createElement("tr");
-                    node.setAttribute("id",data.ID);
+                    node.setAttribute("id",data.id);
                     node.setAttribute("class","temp");
                     node.setAttribute("style","cursor: pointer;");
-                    node.innerHTML = "<th>"+(i+1)+"</th>"+"<th>"+data.ID+"</th><th>"+data.SIP+"</th><th>"+data.Name+"</th><th>"+data.SureName+"</th><th>"+data.Edad+"</th><th>"+data.Sexo+"</th><th>"+data.Procedencia+"</th><th>"+data.Motivo+"</th><th>"+data.Enfermedad+"</th>";
+                    node.innerHTML = "<th>"+(i+1)+"</th>"+"<th>"+data.id+"</th><th>"+data.sip+"</th><th>"+data.name+"</th><th>"+data.surename+"</th><th>"+data.edad+"</th><th>"+data.sexo+"</th><th>"+data.procedencia+"</th><th>"+data.motivo+"</th><th>"+data.enfermedad+"</th>";
                     tableExp.appendChild(node);
                 }
-                var x = document.getElementsByClassName("temp")
-                for (let i = 0; i < x.length; i++){
-                    for (let j = 0; j < x.item(i).children.length - 1; j++){
-                        x.item(i).children.item(j).setAttribute("onclick","modify("+x.item(i).attributes.id.value+",'modExp')")
+                if (rol != "patient"){
+                    var x = document.getElementsByClassName("temp")
+                    for (let i = 0; i < x.length; i++){
+                        for (let j = 0; j < x.item(i).children.length - 1; j++){
+                            x.item(i).children.item(j).setAttribute("onclick","modify("+x.item(i).attributes.id.value+",'modExp')")
+                        }
                     }
                 }
             }
@@ -195,7 +249,9 @@ window.modify = function(id,s){
     let btnDel = document.getElementById("btnDelData");
     btnDel.setAttribute("onclick","delData("+id+")");
 }
-window.modData = function(id){
+window.modData = function(ID){
+    let id = 0;
+    id = ID;
     let datos ={
         Name:"",
         SureName:"",
@@ -225,7 +281,7 @@ window.modData = function(id){
     document.getElementById("input").appendChild(res);
 
     try{
-        App.ModData(datosJ).then((result)=>{
+        App.ModData(datosJ,id).then((result)=>{
             if(result == true){
                 res.innerText="El expediente se ha modificado con exito"
             }else{
@@ -281,8 +337,31 @@ window.panel = function(tipo){
                 <input class="input" id="password" type="password" autocomplete="off" />
                 <label for="repPassword">(*)Repita la contraseña:</label>
                 <input class="input" id="repPassword" type="password" autocomplete="off" />
+                <label for="SIP">(*)Introduzca su targeta SIP:</label>
+                <input class="input" id="SIP" type="password" autocomplete="off" />
                 <button class="btn" onclick="register()">Registrar</button>
                 <button class="btn" onclick="panel('login')">Volver</button>
+            </div>
+            `;
+            break;
+        case "TOTP":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result">Registrar</div>
+            <p>Por favor, utiliza tu aplicación autentificadora y escanea el siguiente QR</p>
+            <div class="input-box" id="input">
+                <div id="QRcode"></div>
+                <button class="btn" onclick="panel('login')">Continuar</button>
+            </div>
+            `;
+            break;
+        case "2FA":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result">Registrar</div>
+            <p>Autenticación en dos factores requerida</p>
+            <div class="input-box" id="input">
+                <label for="data">(*)Código de su aplicación authentificadoras:</label>
+                <input class="input" id="data" type="text" autocomplete="off" />
+                <button class="btn" id="2FA" onclick="auth2FA()">Entrar</button>
             </div>
             `;
             break;
@@ -291,9 +370,9 @@ window.panel = function(tipo){
             <div class="result" id="result">Bienvenido</div>
             <p>Estas dentro del menu principal</p>
             <div class="input-box" id="input">
-                <button class="btn" onclick="getData()">Datos</button>
-                <button class="btn" onclick="panel('newExp')">Crear Expediente</button>
-                <button class="btn" onclick="logout()">Desconectar</button>
+                <button class="btn" id="getData" onclick="getData()">Datos</button>
+                <button class="btn" id="newExp" onclick="panel('newExp')">Crear Expediente</button>
+                <button class="btn" id="logout" onclick="logout()">Desconectar</button>
                 <p id="resultData"></p>
             </div>
             `;
@@ -330,39 +409,39 @@ window.panel = function(tipo){
             </div>
             `;
             break;
-            case "modExp":
-                document.querySelector('#app').innerHTML = `
-                <div class="result" id="result">Crear expediente</div>
-                <p>Por favor, complete todos los campos (*) 👇</p>
-                <div class="input-box" id="input">
-                    <label for="Nombre">(*)Nombre:</label>
-                    <input class="input" id="Nombre" type="text" autocomplete="off" />
-                    <label for="Apellidos">(*)Apellidos:</label>
-                    <input class="input" id="Apellidos" type="text" autocomplete="off" />
-                    <label for="SIP">(*)SIP:</label>
-                    <input class="input" id="SIP" type="number" autocomplete="off" />
-                    <label for="Edad">(*)Edad:</label>
-                    <input class="input" id="Edad" type="number" autocomplete="off" />
-                    <label for="Sexo">(*)Sexo:</label>
-                    <select name="Sexo" id="Sexo">
-                        <option value="Hombre">Hombre</option>
-                        <option value="Mujer">Mujer</option>
-                        <option value="No binario">Otro</option>
-                        <option value="Indeterminado">Prefiero no comunicarlo</option>
-                    </select>
-                    <label for="Procedencia">(*)Procedencia del usuario:</label>
-                    <input class="input" id="Procedencia" type="text" autocomplete="off" />
-                    <label for="Motivo">(*)Motivo de consulta:</label>
-                    <input class="input" id="Motivo" type="text" autocomplete="off" />
-                    <label for="Enfermedad">(*)Enfermedad:</label>
-                    <input class="input" id="Enfermedad" type="text" autocomplete="off" />
-                    <button id="btnModData" class="btn" onclick="modData()">Actualizar</button>
-                    <button id="btnDelData" class="btn" onclick="delData()">Borrar</button>
-                    <button class="btn" onclick="getData()">Volver</button>
-                    <p id="resultData"></p>
-                </div>
-                `;
-                break;
+        case "modExp":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result">Crear expediente</div>
+            <p>Por favor, complete todos los campos (*) 👇</p>
+            <div class="input-box" id="input">
+                <label for="Nombre">(*)Nombre:</label>
+                <input class="input" id="Nombre" type="text" autocomplete="off" />
+                <label for="Apellidos">(*)Apellidos:</label>
+                <input class="input" id="Apellidos" type="text" autocomplete="off" />
+                <label for="SIP">(*)SIP:</label>
+                <input class="input" id="SIP" type="number" autocomplete="off" />
+                <label for="Edad">(*)Edad:</label>
+                <input class="input" id="Edad" type="number" autocomplete="off" />
+                <label for="Sexo">(*)Sexo:</label>
+                <select name="Sexo" id="Sexo">
+                    <option value="Hombre">Hombre</option>
+                    <option value="Mujer">Mujer</option>
+                    <option value="No binario">Otro</option>
+                    <option value="Indeterminado">Prefiero no comunicarlo</option>
+                </select>
+                <label for="Procedencia">(*)Procedencia del usuario:</label>
+                <input class="input" id="Procedencia" type="text" autocomplete="off" />
+                <label for="Motivo">(*)Motivo de consulta:</label>
+                <input class="input" id="Motivo" type="text" autocomplete="off" />
+                <label for="Enfermedad">(*)Enfermedad:</label>
+                <input class="input" id="Enfermedad" type="text" autocomplete="off" />
+                <button id="btnModData" class="btn" onclick="modData()">Actualizar</button>
+                <button id="btnDelData" class="btn" onclick="delData()">Borrar</button>
+                <button class="btn" onclick="getData()">Volver</button>
+                <p id="resultData"></p>
+            </div>
+            `;
+            break;
         case "data":
             document.querySelector('#app').innerHTML = `
             <div class="result" id="result"></div>
@@ -390,6 +469,12 @@ window.panel = function(tipo){
             document.getElementById("result").innerText = "Bad request"
             break;
     }
+    if (rol == "patient" && document.getElementById("result").innerText == "Bienvenido"){
+        document.getElementById("newExp").remove()
+    }
+}
+window.manage2FA = function(select){
+    
 }
 window.errorWindow = function(mensaje){
     if (document.getElementById("errMess")!=null){

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 )
 
 var c = &client{}
@@ -39,15 +40,20 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
-func (a *App) Loggin(name string, pass string) bool {
+func (a *App) Loggin(name, pass string) string {
 	if c.currentUser == "" {
-		return c.loginUser(name, pass)
+		_, mess := c.loginUser(name, pass)
+		return mess
 	}
-	return false
+	return ""
 }
 
-func (a *App) Register(name string, pass string) bool {
-	return c.registerUser(name, pass)
+func (a *App) Register(name, pass string, sip int) string {
+	return c.registerUser(name, pass, sip)
+}
+
+func (a *App) Auth2FA(name, pass, code string) string {
+	return c.auth2FA(name, pass, code)
 }
 
 func (a *App) Logout() bool {
@@ -62,8 +68,8 @@ func (a *App) GetData() string {
 	return c.fetchData()
 }
 
-func (a *App) ModData(data string) bool {
-	return c.modData(data)
+func (a *App) ModData(data string, id int) bool {
+	return c.modData(data, id)
 }
 
 func (a *App) DelData(ID int) bool {
@@ -74,16 +80,19 @@ func (a *App) DelData(ID int) bool {
 // el estado de la sesión (usuario, token) y logger.
 type client struct {
 	currentUser string
-	authToken   string //encriptar
+	authToken   string
+	rol         api.Rol
+	keys        []string
 }
 
 // registerUser pide credenciales y las envía al servidor para un registro.
 // Si el registro es exitoso, se intenta el login automático.
-func (c *client) registerUser(user string, pass string) bool {
+func (c *client) registerUser(user string, pass string, sip int) string {
 	fmt.Println("** Registro de usuario **")
 
 	username := user
 	password := pass
+	SIP := sip
 
 	// hash con SHA512 de la contraseña
 	keyClient := sha512.Sum512([]byte(password + username))
@@ -102,6 +111,8 @@ func (c *client) registerUser(user string, pass string) bool {
 	pubJSON, err := json.Marshal(&keyPub) // y codificamos con JSON
 	chk(err)
 
+	hashSIP := sha512.Sum512([]byte(strconv.Itoa(SIP))) // Datos en bruto se reconvierten con string()
+
 	// Enviamos la acción al servidor
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
@@ -109,6 +120,7 @@ func (c *client) registerUser(user string, pass string) bool {
 		Password: encode64(keyLogin),
 		PubKey:   encode64(compress(pubJSON)),
 		PriKey:   encode64(encrypt(compress(pkJSON), keyData)),
+		SIP:      encode64(hashSIP[:]),
 	})
 
 	// Mostramos resultado
@@ -117,36 +129,29 @@ func (c *client) registerUser(user string, pass string) bool {
 
 	// Si fue exitoso, probamos loguear automáticamente.
 	if res.Success {
-		loginRes := c.sendRequest(api.Request{
-			Action:   api.ActionLogin,
-			Username: username,
-			Password: encode64(keyLogin),
-		})
-		if loginRes.Success {
-			fullHash := sha512.Sum512([]byte(username + password))
-			key = fullHash[:24]
-			c.currentUser = username
-			c.authToken = loginRes.Token
-			fmt.Println("Login automático exitoso. Token guardado.")
-			return true
-		} else {
-			fmt.Println("No se ha podido hacer login automático:", loginRes.Message)
-			return false
+		// Mostrar QR code y secreto para 2FA (usando DataMap)
+		if res.DataMap != nil {
+			if qrCode, ok := res.DataMap["qr_code"].(string); ok {
+				fmt.Println("\nEscanea este código QR con tu app de autenticación:")
+				return qrCode
+			}
+			if secret, ok := res.DataMap["secret"].(string); ok {
+				fmt.Println("\nO ingresa este código manualmente:", secret)
+			}
 		}
-	} else {
-		return false
 	}
+	return ""
 }
 
 // loginUser pide credenciales y realiza un login en el servidor.
-func (c *client) loginUser(user string, pass string) bool {
+func (c *client) loginUser(user, pass string) (bool, string) {
 	fmt.Println("** Inicio de sesión **")
 
 	username := user
 	password := pass
 
 	// hash con SHA512 de la contraseña
-	keyClient := sha512.Sum512([]byte(password))
+	keyClient := sha512.Sum512([]byte(password + username))
 	keyLogin := keyClient[:32] // una mitad para el login (256 bits)
 
 	res := c.sendRequest(api.Request{
@@ -155,20 +160,52 @@ func (c *client) loginUser(user string, pass string) bool {
 		Password: encode64(keyLogin),
 	})
 
+	if res.Requires2FA {
+		fmt.Println("\nAutenticación en dos factores requerida")
+		return true, "Requiere 2FA"
+	}
+
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 
 	// Si login fue exitoso, guardamos currentUser y el token.
 	if res.Success {
-		fullHash := sha512.Sum512([]byte(username + password))
+		fullHash := sha512.Sum512([]byte(password + username))
 		key = fullHash[:24]
 		c.currentUser = username
 		c.authToken = res.Token
-		fmt.Println("Sesión iniciada con éxito. Token guardado.")
-		return true
+		c.rol = res.Rol
+		c.keys = res.Keys
+		fmt.Println("Sesión iniciada con éxito. Token guardado. Rol asignado con exito " + res.Rol.Name)
+		return true, "Autorizado: " + res.Rol.Name
 	} else {
-		return false
+		return false, res.Message
 	}
+}
+
+func (c *client) auth2FA(user, pass, code string) string {
+	keyClient := sha512.Sum512([]byte(pass + user))
+	keyLogin := keyClient[:32]
+
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionLogin,
+		Username: user,
+		Password: encode64(keyLogin),
+		TOTPCode: code,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
+
+	if res.Success {
+		key = keyLogin
+		c.currentUser = user
+		c.authToken = res.Token
+		c.rol = res.Rol
+		c.keys = res.Keys
+		return "Autorizado: " + res.Rol.Name
+	}
+	return ""
 }
 
 // fetchData pide datos privados al servidor.
@@ -184,7 +221,7 @@ func (c *client) fetchData() string {
 
 	// Hacemos la request con ActionFetchData
 	res := c.sendRequest(api.Request{
-		Action:   api.ActionFetchData,
+		Action:   api.ActionGetData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 	})
@@ -196,29 +233,24 @@ func (c *client) fetchData() string {
 	if res.Success {
 		// Recibimos la lista de datos
 		dataList := res.Data
+		keyList := res.Keys
 		// Creamos lista vacia
 		var desencriptedList []api.ClinicData
 		for i, data := range dataList {
-			// Convertimos a []byte
 			encryptedData := decode64(data)
+			var fullhash []byte
+			if c.rol.Name == "patient" {
+				fullhash = decode64(c.keys[0])
+			}
+			if c.rol.Name == "doctor" {
+				encryptedKey := decode64(keyList[i])
+				fullhash = decrypt(encryptedKey, key)
+			}
+			compr := decrypt(encryptedData, fullhash[:32])
+			jData := decompress(compr)
 
-			// Desencriptamos
-			jData := decrypt(encryptedData, key)
-
-			// Convertimos a struct
 			var clinicData api.ClinicData
 			json.Unmarshal(jData, &clinicData)
-
-			fmt.Println("Datos paciente: ", i+1)            //1-
-			fmt.Println("Nombre: ", clinicData.Name)        //4-
-			fmt.Println("Apellidos: ", clinicData.SureName) //5-
-			fmt.Println("ID: ", clinicData.ID)              //3-
-			fmt.Println("SIP: ", clinicData.SIP)            //2-
-			fmt.Println("Edad: ", clinicData.Edad)          //6-
-			fmt.Println("Sexo: ", clinicData.Sexo)          //7-
-			fmt.Println("Procedencia: ", clinicData.Procedencia)
-			fmt.Println("Motivo: ", clinicData.Motivo)         //8
-			fmt.Println("Enfermedad: ", clinicData.Enfermedad) //9
 
 			// Añadimos el elemento a la lista
 			desencriptedList = append(desencriptedList, clinicData)
@@ -239,6 +271,10 @@ func (c *client) fetchData() string {
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
 func (c *client) updateData(datos string) bool {
 	fmt.Println("** Actualizar datos del usuario **")
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return false
+	}
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
@@ -268,31 +304,21 @@ func (c *client) updateData(datos string) bool {
 		return false
 	}
 
-	// Convertimos a JSON
-	jData, err := json.Marshal(newData)
-	if err != nil {
-		fmt.Println("Error en Marshal")
-		return false
-	}
-
-	// Encryptamos
-	encriptedData := encrypt(jData, key)
-
-	// Conversion a string
-	data := encode64(encriptedData)
+	data, newKey := packData(newData)
 
 	// Enviamos la solicitud de actualización
-	res := c.sendRequest(api.Request{
-		Action:   api.ActionUpdateData,
+	res2 := c.sendRequest(api.Request{
+		Action:   api.ActionPostData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 		Data:     data,
+		PriKey:   newKey,
 	})
 
-	fmt.Println("Éxito:", res.Success)
-	fmt.Println("Mensaje:", res.Message)
+	fmt.Println("Éxito:", res2.Success)
+	fmt.Println("Mensaje:", res2.Message)
 
-	if res.Success {
+	if res2.Success {
 		fmt.Println("Datos enviados:", data)
 		return true
 	} else {
@@ -303,7 +329,11 @@ func (c *client) updateData(datos string) bool {
 	}
 }
 
-func (c *client) modData(datos string) bool {
+func (c *client) modData(datos string, id int) bool {
+	if c.rol.Name == "patient" {
+		fmt.Println("No tienes acceso a esta función")
+		return false
+	}
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
 		return false
@@ -316,12 +346,11 @@ func (c *client) modData(datos string) bool {
 		return false
 	}
 
-	var listData []string
-	posicion := -1
+	sendData, sendKey := packData(newData)
 
 	// Hacemos la request con ActionFetchData
 	res1 := c.sendRequest(api.Request{
-		Action:   api.ActionFetchData,
+		Action:   api.ActionGetData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 	})
@@ -330,67 +359,34 @@ func (c *client) modData(datos string) bool {
 	fmt.Println("Mensaje:", res1.Message)
 
 	// Si fue exitoso, mostramos la data recibida
-	if res1.Success {
-		// Recibimos la lista de datos
-		listData = res1.Data
-	} else {
+	if !res1.Success {
 		return false
 	}
 
-	for i, elem := range listData {
-		// Convertimos a []byte
-		encryptedData := decode64(elem)
-
-		// Desencriptamos
-		jData := decrypt(encryptedData, key)
-
-		// Convertimos a struct
-		var data api.ClinicData
-		json.Unmarshal(jData, &data)
-
-		// Condicion
-		if newData.ID == data.ID {
-			posicion = i
-
-			// Convertimos a JSON
-			jData, err := json.Marshal(newData)
-			if err != nil {
-				fmt.Println("Error en Marshal 315")
-				return false
-			}
-
-			// Encryptamos
-			encriptedData := encrypt(jData, key)
-
-			// Conversion a string
-			sendData := encode64(encriptedData)
-
-			// Enviamos la solicitud de actualización
-			res2 := c.sendRequest(api.Request{
-				Action:   api.ActionModData,
-				Username: c.currentUser,
-				Token:    c.authToken,
-				Data:     sendData,
-				Position: posicion,
-			})
-
-			fmt.Println("Éxito:", res2.Success)
-			fmt.Println("Mensaje:", res2.Message)
-			if !res2.Success {
-				c.currentUser = ""
-				c.authToken = ""
-				key = nil
-				return false
-			}
-			break
-		}
-	}
+	posicion, _ := unpackData(res1, id)
 	if posicion == -1 {
 		fmt.Println("El ID no se encuentra entre los expedientes admitidos")
 		return false
-	} else {
-		return true
 	}
+
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionPutData,
+		Username: c.currentUser,
+		Token:    c.authToken,
+		Data:     sendData,
+		Position: posicion,
+		PriKey:   sendKey,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
+	if !res.Success {
+		c.currentUser = ""
+		c.authToken = ""
+		key = nil
+		return false
+	}
+	return true
 }
 
 func (c *client) delData(ID int) bool {
@@ -399,12 +395,9 @@ func (c *client) delData(ID int) bool {
 		return false
 	}
 
-	var listData []string
-	posicion := -1
-
 	// Hacemos la request con ActionFetchData
 	res1 := c.sendRequest(api.Request{
-		Action:   api.ActionFetchData,
+		Action:   api.ActionGetData,
 		Username: c.currentUser,
 		Token:    c.authToken,
 	})
@@ -413,55 +406,33 @@ func (c *client) delData(ID int) bool {
 	fmt.Println("Mensaje:", res1.Message)
 
 	// Si fue exitoso, mostramos la data recibida
-	if res1.Success {
-		// Recibimos la lista de datos
-		listData = res1.Data
-	} else {
+	if !res1.Success {
+		return false
+	}
+
+	posicion, _ := unpackData(res1, ID)
+	if posicion == -1 {
+		fmt.Println("El ID no se encuentra entre los expedientes admitidos")
+		return false
+	}
+
+	// Enviamos la solicitud de actualización
+	res := c.sendRequest(api.Request{
+		Action:   api.ActionDeleteData,
+		Username: c.currentUser,
+		Token:    c.authToken,
+		Position: posicion,
+	})
+
+	fmt.Println("Éxito:", res.Success)
+	fmt.Println("Mensaje:", res.Message)
+	if !res.Success {
 		c.currentUser = ""
 		c.authToken = ""
 		key = nil
 		return false
 	}
-
-	for i, elem := range listData {
-		// Convertimos a []byte
-		encryptedData := decode64(elem)
-
-		// Desencriptamos
-		jData := decrypt(encryptedData, key)
-
-		// Convertimos a struct
-		var data api.ClinicData
-		json.Unmarshal(jData, &data)
-
-		// Condicion
-		if ID == data.ID {
-			posicion = i
-			// Hacemos la request con ActionFetchData
-			res2 := c.sendRequest(api.Request{
-				Action:   api.ActionDelData,
-				Username: c.currentUser,
-				Token:    c.authToken,
-				Position: i,
-			})
-
-			fmt.Println("Éxito:", res2.Success)
-			fmt.Println("Mensaje:", res2.Message)
-			if !res2.Success {
-				c.currentUser = ""
-				c.authToken = ""
-				key = nil
-				return false
-			}
-			break
-		}
-	}
-	if posicion == -1 {
-		fmt.Println("El ID no se encuentra entre los expedientes admitidos")
-		return false
-	} else {
-		return true
-	}
+	return true
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,
@@ -562,4 +533,52 @@ func compress(data []byte) []byte {
 	w.Write(data)           // escribimos los datos
 	w.Close()               // cerramos el escritor (buffering)
 	return b.Bytes()        // devolvemos los datos comprimidos
+}
+
+func decompress(data []byte) []byte {
+	var b bytes.Buffer // b contendrá los datos descomprimidos
+
+	r, err := zlib.NewReader(bytes.NewReader(data)) // lector descomprime al leer
+
+	chk(err)         // comprobamos el error
+	io.Copy(&b, r)   // copiamos del descompresor (r) al buffer (b)
+	r.Close()        // cerramos el lector (buffering)
+	return b.Bytes() // devolvemos los datos descomprimidos
+}
+
+func packData(Data api.ClinicData) ([]string, string) {
+	var sendData []string
+	jData, err := json.Marshal(Data) // Convertimos a JSON
+	if err != nil {
+		fmt.Println("Error en Marshal 315")
+		return nil, ""
+	}
+	compr := compress(jData) // Comprimimos
+	fullhash := sha512.Sum512([]byte(strconv.Itoa(Data.SIP)))
+	encriptedData := encrypt(compr, fullhash[:32])           // Encryptamos los datos
+	encriptedIdent := encrypt([]byte("user"), fullhash[:32]) // Encryptamos los datos
+	encriptedHash := encrypt(fullhash[:], key)               // Encryptamos el hash
+	dataSend := encode64(encriptedData)                      // Conversion a string
+	sendKey := encode64(encriptedHash)
+	sendData = append(sendData, encode64(encriptedIdent), dataSend)
+	return sendData, sendKey
+}
+
+func unpackData(res api.Response, id int) (int, api.ClinicData) {
+	posicion := -1
+	// Recibimos la lista de datos
+	for i, data := range res.Data {
+		encryptedData := decode64(data) // Convertimos a []byte
+		encryptedKey := decode64(res.Keys[i])
+		fullhash := decrypt(encryptedKey, key)
+		compr := decrypt(encryptedData, fullhash[:32]) // Desencriptamos
+		jData := decompress(compr)                     // Descomprimimos
+		var clinicData api.ClinicData                  // Convertimos a struct
+		json.Unmarshal(jData, &clinicData)
+		if id == clinicData.ID { // Condicion
+			posicion = i
+			return posicion, clinicData
+		}
+	}
+	return posicion, api.ClinicData{}
 }
