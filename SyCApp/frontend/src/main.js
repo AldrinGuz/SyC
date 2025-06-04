@@ -350,7 +350,7 @@ window.panel = function(tipo){
             <p>Por favor, utiliza tu aplicación autentificadora y escanea el siguiente QR</p>
             <div class="input-box" id="input">
                 <div id="QRcode"></div>
-                <button class="btn" onclick="panel('login')">Continuar</button>
+                <button class="btn" id="continue" onclick="panel('login')">Continuar</button>
             </div>
             `;
             break;
@@ -372,6 +372,7 @@ window.panel = function(tipo){
             <div class="input-box" id="input">
                 <button class="btn" id="getData" onclick="getData()">Datos</button>
                 <button class="btn" id="newExp" onclick="panel('newExp')">Crear Expediente</button>
+                <button class="btn" id="manageFA" onclick="panel('manageFA')">Factor de Autentificación</button>
                 <button class="btn" id="logout" onclick="logout()">Desconectar</button>
                 <p id="resultData"></p>
             </div>
@@ -465,16 +466,58 @@ window.panel = function(tipo){
             <p id="resultData"></p>
             `;
             break;
+        case "manageFA":
+            document.querySelector('#app').innerHTML = `
+            <div class="result" id="result">2FA TOTP</div>
+            <p>AVISO: Se recomienda mantener el 2FA siempre habilitado por su seguridad.</p>
+            <div class="input-box" id="input">
+                <button class="btn" id="hab" onclick="manage2FA('true')">Habilitar / Crear QR</button>
+                <button class="btn" id="deshab" onclick="manage2FA('false')">Deshabilitar</button>
+                <button class="btn" onclick="panel('main')">Volver</button>
+                <p id="resultData"></p>
+            </div>
+            `;
+            break;
         default:
             document.getElementById("result").innerText = "Bad request"
             break;
     }
     if (rol == "patient" && document.getElementById("result").innerText == "Bienvenido"){
         document.getElementById("newExp").remove()
+        document.getElementById("manageFA").remove()
     }
 }
-window.manage2FA = function(select){
-    
+window.manage2FA = function(select){// select true
+    let shutdown = true;
+    if (select == "false"){
+        shutdown = false;
+    }
+    try {
+        App.Manage2FA(shutdown).then((result)=>{
+            if (result.includes("deshabilitada")){
+                errorWindow(result);
+            }else if (result == ""){
+                errorWindow("Algo ha salido mal");
+            }else{
+                panel('TOTP');
+                let button = document.getElementById("continue")
+                button.setAttribute("onclick","panel('main')")
+                let QR = document.getElementById("QRcode");
+                
+                // Crear un elemento img
+                let img = document.createElement("img");
+                
+                // Asignar los datos de la imagen (asumiendo que result es base64)
+                img.src = "data:image/png;base64," + result; // Cambia "png" por el formato correcto si es necesario
+                
+                // Limpiar el div y añadir la imagen
+                QR.innerHTML = "";
+                QR.appendChild(img);
+            }
+        })
+    } catch (error) {
+        console.error(error)
+    }
 }
 window.errorWindow = function(mensaje){
     if (document.getElementById("errMess")!=null){

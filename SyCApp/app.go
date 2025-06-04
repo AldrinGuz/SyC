@@ -56,6 +56,10 @@ func (a *App) Auth2FA(name, pass, code string) string {
 	return c.auth2FA(name, pass, code)
 }
 
+func (a *App) Manage2FA(shutdown bool) string {
+	return c.manage2FA(shutdown)
+}
+
 func (a *App) Logout() bool {
 	return c.logoutUser()
 }
@@ -206,6 +210,44 @@ func (c *client) auth2FA(user, pass, code string) string {
 		return "Autorizado: " + res.Rol.Name
 	}
 	return ""
+}
+
+func (c *client) manage2FA(shutdown bool) string {
+	if !shutdown {
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionDisable2FA,
+			Username: c.currentUser,
+			Token:    c.authToken,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+		return "Autenticación en Dos Factores deshabilitada"
+
+	} else {
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionEnable2FA,
+			Username: c.currentUser,
+			Token:    c.authToken,
+		})
+
+		fmt.Println("Éxito:", res.Success)
+		fmt.Println("Mensaje:", res.Message)
+
+		if res.Success {
+			// Mostrar QR code y secreto para 2FA (usando DataMap)
+			if res.DataMap != nil {
+				if qrCode, ok := res.DataMap["qr_code"].(string); ok {
+					fmt.Println("\nEscanea este código QR con tu app de autenticación:")
+					return qrCode
+				}
+				if secret, ok := res.DataMap["secret"].(string); ok {
+					fmt.Println("\nO ingresa este código manualmente:", secret)
+				}
+			}
+		}
+		return ""
+	}
 }
 
 // fetchData pide datos privados al servidor.

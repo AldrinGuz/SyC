@@ -427,7 +427,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error validando código de autenticación"}
 	}
 	if !valid {
-		//return api.Response{Success: false, Message: "Código de autenticación inválido"}
+		return api.Response{Success: false, Message: "Código de autenticación inválido"}
 	}
 
 	tokenString, err := s.generateJWT(req.Username)
@@ -678,8 +678,8 @@ func (s *server) createRol(userid string, encryptedUsername []byte) (api.Rol, er
 	if err != nil {
 		// Si no exite la carpeta rol o no tiene registrado el sip doblemente encriptado crea un rol por defecto para el sip
 		if strings.Contains(err.Error(), "bucket no encontrado: rol") || err.Error() == "clave no encontrada: "+string(encryptedUserid) {
-			rol.Name = "patient"
-			rol.Level = 1
+			rol.Name = "doctor"
+			rol.Level = 2
 			jRol, err := json.Marshal(rol)
 			if err != nil {
 				return api.Rol{}, err

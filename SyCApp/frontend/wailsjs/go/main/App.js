@@ -22,6 +22,10 @@ export function Logout() {
   return window['go']['main']['App']['Logout']();
 }
 
+export function Manage2FA(arg1) {
+  return window['go']['main']['App']['Manage2FA'](arg1);
+}
+
 export function ModData(arg1, arg2) {
   return window['go']['main']['App']['ModData'](arg1, arg2);
 }

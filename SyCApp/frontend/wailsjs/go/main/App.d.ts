@@ -11,6 +11,8 @@ export function Loggin(arg1:string,arg2:string):Promise<string>;
 
 export function Logout():Promise<boolean>;
 
+export function Manage2FA(arg1:boolean):Promise<string>;
+
 export function ModData(arg1:string,arg2:number):Promise<boolean>;
 
 export function Register(arg1:string,arg2:string,arg3:number):Promise<string>;
