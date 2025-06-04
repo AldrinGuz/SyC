@@ -4,17 +4,16 @@ import './style.css';
 import * as App from '../wailsjs/go/main/App';
 
 document.querySelector('#app').innerHTML = `
-
-    <div class="result" id="result">Haga login o registrese en nuestra app.</div>
-      <div class="input-box" id="input">
-        <label for="name">Nombre:</label>
-        <input class="input" id="name" type="text" autocomplete="off" />
-        <label for="password">Contraseña:</label>
-        <input class="input" id="password" type="password" />
-        <button class="btn" onclick="loggin()">Login</button>
-        <button class="btn" onclick="panel('register')">Registrar</button>
-      </div>
+            <div id="loading" style="display: block;">
+    <div class="container2">
+        <div class="load">
+            <h1>CARGANDO</h1>
+            <div class="box-item first">.</div>
+            <div class="box-item second">.</div>
+            <div class="box-item third">.</div>
+        </div>
     </div>
+</div>
 `;
 
 let rol;
@@ -313,6 +312,20 @@ window.delData = function(id){
 }
 window.panel = function(tipo){
     switch (tipo){
+        case "loading":
+            document.querySelector('#app').innerHTML = `
+            <div id="loading" style="display: block;">
+    <div class="container2">
+        <div class="load">
+            <h1>CARGANDO</h1>
+            <div class="box-item first">.</div>
+            <div class="box-item second">.</div>
+            <div class="box-item third">.</div>
+        </div>
+    </div>
+</div>
+            `;
+            break;
         case "login":
             document.querySelector('#app').innerHTML = `
             <div class="result" id="result">Haga login o registrese en nuestra app.</div>
@@ -541,3 +554,8 @@ window.closeErr = function(){
         document.getElementById("errMess").remove();
     }   
 }
+function showLoading(duration, nextPanel) {
+    panel('loading');
+    setTimeout(() => { panel(nextPanel); }, duration);
+}
+showLoading(2000, 'login');

@@ -1,14 +1,12 @@
-OBLIGATORIO:
-- Comunicación HTTPS cliente/servidor
-- Autentificación segura de usuarios
-- Cifrado de la inf almacenada en la BD
-- Gestión segura de la clave de cifrado
-Cosas a implementar:
-- Cuando el usuario crea una cuenta debe dar un correo.
-- La contraseña debe ser obligatoriamente alfanumerica con simbolos.
-- La contraseña no debe ser visible.
-- La contraseña se bloqueará despues de 5 intentos.
-- Envío de correo automatizado para la recuperación de contraseñas y claves.
+Comandos para iniciar el programa (deberá tener preinstalado wails y go):
+App:
+cd SyCApp
+wails dev
 
-Hacer interfaz, elegir cifrado (donde se cifrara).
+Server:
+go run main.go
 
+SIP de prueba para los médicos:
+00000000
+77777777
+99999999
