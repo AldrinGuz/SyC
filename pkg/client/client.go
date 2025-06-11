@@ -106,19 +106,19 @@ func (c *client) registerUser() {
 	username := ui.ReadInput("Nombre de usuario")
 	password := ui.ReadInput("Contraseña")
 	SIP := ui.ReadInt("SIP")
-
+	// El hash resultado de la combinacion de contraseña y usuario se destina a la creacion de
 	keyClient := sha512.Sum512([]byte(password + username))
-	keyLogin := keyClient[:32]
-	keyData := keyClient[32:64]
+	keyLogin := keyClient[:32]  // una contraseña con la mitad
+	keyData := keyClient[32:64] // una clave para encriptar la pk con la otra mitad
 
-	pkClient, err := rsa.GenerateKey(rand.Reader, 1024)
+	pkClient, err := rsa.GenerateKey(rand.Reader, 1024) // creacion de clave publica
 	chk(err)
 	pkClient.Precompute()
 
 	pkJSON, err := json.Marshal(&pkClient)
 	chk(err)
 
-	keyPub := pkClient.Public()
+	keyPub := pkClient.Public() // creacion de clave privada
 	pubJSON, err := json.Marshal(&keyPub)
 	chk(err)
 
@@ -180,7 +180,7 @@ func (c *client) loginUser() {
 
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
-
+	// Si exitosos se establece el nombre de user, el token, el rol y sus claves
 	if res.Success {
 		fullHash := sha512.Sum512([]byte(password + username))
 		key = fullHash[:24]
@@ -667,7 +667,7 @@ func decompress(data []byte) []byte {
 	return b.Bytes() // devolvemos los datos descomprimidos
 }
 
-// función prepara el dato para su envio
+// prepara el dato para su envio
 func packData(Data api.ClinicData) ([]string, string) {
 	var sendData []string
 	jData, err := json.Marshal(Data) // Convertimos a JSON
@@ -685,6 +685,8 @@ func packData(Data api.ClinicData) ([]string, string) {
 	sendData = append(sendData, encode64(encriptedIdent), dataSend)
 	return sendData, sendKey
 }
+
+// prepara el dato recibido para su procesamiento
 func unpackData(res api.Response, id int) (int, api.ClinicData) {
 	posicion := -1
 	// Recibimos la lista de datos

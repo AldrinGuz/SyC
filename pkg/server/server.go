@@ -46,17 +46,17 @@ func Run(n1 string) error {
 	key = hash[:24]
 
 	jwtSecret := hash[:32]
-	tokenExp := 60 * time.Minute
+	tokenExp := 60 * time.Minute // Se establece 60 minutos de duración de token
 
 	db, err := store.NewStore("bbolt", "data/server.db")
 	if err != nil {
 		return fmt.Errorf("error abriendo base de datos: %v", err)
 	}
-
-	prueba, _ := db.Get("start", []byte("mk"))
-	dec, _ := decrypt(key, prueba)
+	// Se realiza una prueba de clave comprobando que sea la correcta
+	prueba, _ := db.Get("start", []byte("mk")) // Se obtiene un valor prueba
+	dec, _ := decrypt(key, prueba)             // Se desencripta
 	if !bytes.Equal([]byte("KALI OSINT"), dec) {
-		return fmt.Errorf("error la clave maestra no es coincidente")
+		return fmt.Errorf("error la clave maestra no es coincidente") // Si esta primera prueba fallase se aborta el servidor
 	}
 
 	srv := &server{
@@ -64,18 +64,19 @@ func Run(n1 string) error {
 		log:        log.New(os.Stdout, "[srv] ", log.LstdFlags),
 		jwtSecret:  jwtSecret,
 		tokenExp:   tokenExp,
-		totpIssuer: "SyC App", //Nombre de la empresa
+		totpIssuer: "SyC App", //Nombre de la empresa/app
 	}
 
 	defer srv.db.Close()
 
 	mux := http.NewServeMux()
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
-
+	// Se crea una conexion segura por tls utilizando el certificado y la clave
 	err = http.ListenAndServeTLS(":8080", "pkg/server/cert.pem", "pkg/server/key.pem", mux)
 	return err
 }
 
+// Recibe por http Post diferentes peticiones que se traducen a struct(api.Request) las funciones del servidor resuelven la petición y se traduciran en struct>JSON>http
 func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
@@ -118,10 +119,11 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// Genera un token seguro apartir del nombre de usuario
 func (s *server) generateJWT(username string) (string, error) {
-	expirationTime := time.Now().Add(s.tokenExp)
+	expirationTime := time.Now().Add(s.tokenExp) // Se crea un tiempo limite
 
-	claims := &JWTClaims{
+	claims := &JWTClaims{ // Se asigna los datos del token
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -131,13 +133,14 @@ func (s *server) generateJWT(username string) (string, error) {
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims) // Crea el token con las especificaciones
+	return token.SignedString(s.jwtSecret)                     // Da una señal del token que debe tener el user
 }
 
+// Mediante el token suministrado obtiene la validez
 func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 	claims := &JWTClaims{}
-
+	// Toma el señalizador de token, el struct de respuesta y una funcion paralela que ejecuta la conversion de metodos
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("método de firma inesperado: %v", token.Header["alg"])
@@ -148,7 +151,7 @@ func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	// El token es un struct que tendra un bool indicativo del estado del token
 	if !token.Valid {
 		return nil, fmt.Errorf("token inválido")
 	}
@@ -156,26 +159,29 @@ func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 	return claims, nil
 }
 
+// Simplificacion de la funcion validateJWT hace uso del token para comprobar la identidad del cliente
 func (s *server) isTokenValid(username, tokenString string) bool {
 	claims, err := s.validateJWT(tokenString)
 	if err != nil {
 		s.log.Printf("Error validando token: %v", err)
 		return false
 	}
-
+	// El cliente actual deberá ser el usuario con el mismo nombre que el token dado
 	return claims.Username == username
 }
 
+// Genera una clave TOTP con las especificaciones indicadas
 func (s *server) generateTOTPSecret(username string) (*otp.Key, error) {
 	return totp.Generate(totp.GenerateOpts{
 		Issuer:      s.totpIssuer, //Nombre de la empresa generadora de totp
 		AccountName: username,
-		Period:      30,                //Tiemppo estimado para la caducidad del código
+		Period:      30,                //Tiempo estimado para la caducidad del código
 		Digits:      otp.DigitsSix,     //Número de dígitos que utilizara el código de tiempo
 		Algorithm:   otp.AlgorithmSHA1, //Algoritmo de cifrado que usara junto con Hash-based Message Authentication Code para generar contraseñas de un solo uso basadas en el tiempo
 	})
 }
 
+// Toma el codigo TOTP y nombre de user y devuelve una sentencia booleana en función de la validez de los datos
 func (s *server) validateTOTP(username, code string) (bool, error) {
 	encryptedUsername, err := encrypt(key, []byte(username))
 	if err != nil {
@@ -194,7 +200,7 @@ func (s *server) validateTOTP(username, code string) (bool, error) {
 		s.log.Printf("Error descifrando secreto: %v", err)
 		return false, err
 	}
-	//currentCode, _ := totp.GenerateCode(string(secret), time.Now())
+	//currentCode, _ := totp.GenerateCode(string(secret), time.Now()) ACTIVADO SOLO COMO COMPROBACION
 	//s.log.Printf("Se esperaba %v", currentCode) ACTIVADO SOLO COMO COMPROBACION
 	valid, err := totp.ValidateCustom(
 		code,
@@ -216,6 +222,7 @@ func (s *server) validateTOTP(username, code string) (bool, error) {
 	return valid, nil
 }
 
+// Genera un QR en función de la clave TOTP
 func (s *server) getTOTPQRCode(key *otp.Key) ([]byte, error) {
 	var buf bytes.Buffer
 	img, err := key.Image(200, 200)
@@ -223,13 +230,14 @@ func (s *server) getTOTPQRCode(key *otp.Key) ([]byte, error) {
 		return nil, err
 	}
 
-	if err := png.Encode(&buf, img); err != nil {
+	if err := png.Encode(&buf, img); err != nil { // Es codificado en byte para su envío
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
 }
 
+// Encripta un texto plano a cifrado, utilza cifrado en bloque AES-CTR
 func encrypt(key, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -249,6 +257,7 @@ func encrypt(key, plaintext []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
+// Desencripta un texto cifrado a plano, utilza cifrado en bloque AES-CTR
 func decrypt(key, ciphertext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -269,11 +278,12 @@ func decrypt(key, ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// Crea un nuevo usuario mediante el nombre, contraseña, identificación y CPu y CPr, el server responde con el QR
 func (s *server) registerUser(req api.Request) api.Response {
 	if req.Username == "" || req.Password == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
-
+	// Consideramos la posibilidad de que ya este registrado el nombre
 	exists, err := s.userExists(req.Username)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al verificar usuario"}
@@ -281,7 +291,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 	if exists {
 		return api.Response{Success: false, Message: "El usuario ya existe"}
 	}
-
+	// Se crea un hash con bycrypt donde se hashea la contraseña junto con una sal, ambas dentro del hash final
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al hashear la contraseña"}
@@ -297,15 +307,15 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al guardar rol " + err.Error()}
 	}
 	s.log.Println("El rol asignado es " + rol.Name)
-
+	// Se guarda la contraseña con sal
 	if err := s.db.Put("auth", encryptedUsername, hashedPassword); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
-
+	// Se guarda la clave privada
 	if err := s.db.Put("prkey", encryptedUsername, []byte(req.PriKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave privada"}
 	}
-
+	// Se guarda la clave publica
 	if err := s.db.Put("pukey", encryptedUsername, []byte(req.PubKey)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar clave publica"}
 	}
@@ -316,6 +326,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al crear list[]"}
 	}
 	encryptedList, err := encrypt(key, jListdata)
+	// Se guarda la lista para las claves de usuario
 	if err := s.db.Put("userkeys", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al añadir las keys de usuario"}
 	}
@@ -325,6 +336,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al crear list[]"}
 	}
 	encryptedList, _ = encrypt(key, jListdata)
+	// Se guarda las listas para los datos de usuario
 	if err := s.db.Put("userdata", encryptedUsername, encryptedList); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
 	}
@@ -338,7 +350,7 @@ func (s *server) registerUser(req api.Request) api.Response {
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar secreto 2FA"}
 	}
-
+	// Se guarda la clave de TOTP
 	if err := s.db.Put("totp_secrets", encryptedUsername, encryptedSecret); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar secreto 2FA"}
 	}
@@ -358,8 +370,9 @@ func (s *server) registerUser(req api.Request) api.Response {
 	}
 }
 
+// Permite logear al usuario mediante sus credenciales de acceso, el servidor responderá con su identificación
 func (s *server) loginUser(req api.Request) api.Response {
-	if req.Username == "" || req.Password == "" {
+	if req.Username == "" || req.Password == "" { // Chequeo basico de credenciales
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
@@ -374,12 +387,12 @@ func (s *server) loginUser(req api.Request) api.Response {
 		s.log.Printf("Error obteniendo hash de contraseña: %v", err)
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
-
+	// Comprobación de la contraseña
 	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(req.Password)); err != nil {
 		s.log.Printf("Error comparando contraseñas: %v", err)
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
-
+	// Obtencion de la identificacion de usuario
 	encriptedId, err := s.db.Get("gInfo", encryptedUsername)
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener el userID en gInfo"}
@@ -388,21 +401,19 @@ func (s *server) loginUser(req api.Request) api.Response {
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al desencriptar el userID"}
 	}
-
+	// Comprobacion de TOTP
 	_, err = s.db.Get("totp_secrets", encryptedUsername)
-	if err != nil {
+	if err != nil { // Si no es necesario
 		s.log.Printf("2FA no configurado para el usuario, procediendo con login normal")
-		tokenString, err := s.generateJWT(req.Username)
+		tokenString, err := s.generateJWT(req.Username) // Generacion de token
 		if err != nil {
 			s.log.Printf("Error generando token JWT: %v", err)
 			return api.Response{Success: false, Message: "Error al generar token JWT"}
 		}
-
-		rol, err := s.userRol(encryptedUsername)
+		rol, err := s.userRol(encryptedUsername) // Obtencion del rol
 		if err != nil {
 			return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
 		}
-
 		return api.Response{
 			Success: true,
 			Message: "Login exitoso",
@@ -411,7 +422,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 			Keys:    []string{string(byteUserID)},
 		}
 	}
-
+	// Solicitud de 2FA
 	if req.TOTPCode == "" {
 		s.log.Printf("2FA requerido para el usuario %s", req.Username)
 		return api.Response{
@@ -420,7 +431,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 			Requires2FA: true,
 		}
 	}
-
+	// Validación de TOTP
 	valid, err := s.validateTOTP(req.Username, req.TOTPCode)
 	if err != nil {
 		s.log.Printf("Error validando código 2FA: %v", err)
@@ -429,18 +440,15 @@ func (s *server) loginUser(req api.Request) api.Response {
 	if !valid {
 		return api.Response{Success: false, Message: "Código de autenticación inválido"}
 	}
-
-	tokenString, err := s.generateJWT(req.Username)
+	tokenString, err := s.generateJWT(req.Username) // Generacion de token
 	if err != nil {
 		s.log.Printf("Error generando token JWT: %v", err)
 		return api.Response{Success: false, Message: "Error al generar token JWT"}
 	}
-
-	rol, err := s.userRol(encryptedUsername)
+	rol, err := s.userRol(encryptedUsername) // Obtencion del rol
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener rol " + err.Error()}
 	}
-
 	return api.Response{
 		Success: true,
 		Message: "Login exitoso con autenticación en dos factores",
@@ -450,6 +458,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 	}
 }
 
+// Crea una nueva clave TOTP
 func (s *server) enable2FA(req api.Request) api.Response {
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -465,7 +474,7 @@ func (s *server) enable2FA(req api.Request) api.Response {
 	}
 
 	rol, err := s.userRol(encryptedUsername)
-	if err != nil || rol.Level < 2 {
+	if err != nil || rol.Level < 2 { // Solo permitido a personal hospitalario
 		return api.Response{Success: false, Message: "No tienes los permisos necesarios"}
 	}
 
@@ -501,6 +510,7 @@ func (s *server) enable2FA(req api.Request) api.Response {
 	}
 }
 
+// Desactiva el 2FA eliminando la clave TOTP de la bd
 func (s *server) disable2FA(req api.Request) api.Response {
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -618,6 +628,7 @@ func (s *server) logoutUser(req api.Request) api.Response {
 	return api.Response{Success: true, Message: "Sesión cerrada correctamente"}
 }
 
+// modData modifica los datos del usuario por remplazo
 func (s *server) modData(req api.Request) api.Response {
 	listData, listKeys, res := s.writeUserData(req, 2)
 	if !res.Success {
@@ -630,13 +641,14 @@ func (s *server) modData(req api.Request) api.Response {
 	return s.closeUserData(listData, listKeys, req, "El expediente ha sido modificado con exito")
 }
 
+// delData elimina los datos especificados por el usuario
 func (s *server) delData(req api.Request) api.Response {
 	listData, listKeys, res := s.writeUserData(req, 2)
 	if !res.Success {
 		return res
 	}
 
-	// Añadimos elemento a la lista
+	// Se elimina el dato sobreescribiendo la lista con todos los demas elementos
 	listData = append(listData[:req.Position], listData[req.Position+1:]...)
 	listKeys = append(listKeys[:req.Position], listKeys[req.Position+1:]...)
 
@@ -726,12 +738,14 @@ func (s *server) userRol(encryptedUsername []byte) (api.Rol, error) {
 	return rol, nil
 }
 
+// Genera un id aleatorio y lo envia al usuario
 func (s *server) getId(api.Request) api.Response {
 	max := new(big.Int).Lsh(big.NewInt(1), 24)
 	n, _ := rand.Int(rand.Reader, max)
 	return api.Response{Success: true, ID: int(n.Int64())}
 }
 
+// Chequea las credenciales, toma el rol, obtiene los datos y las claves de user (abre la bd)
 func (s *server) writeUserData(req api.Request, accessLevel int) ([][]string, []string, api.Response) {
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
@@ -782,6 +796,7 @@ func (s *server) writeUserData(req api.Request, accessLevel int) ([][]string, []
 	return listData, listkeys, api.Response{Success: true}
 }
 
+// Obtiene las claves de user
 func (s *server) writeUserK(req api.Request) ([]string, api.Response) {
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
@@ -813,6 +828,7 @@ func (s *server) writeUserK(req api.Request) ([]string, api.Response) {
 	return listKeys, api.Response{Success: true}
 }
 
+// Sustituye los datos de la bd por los datos de la entrada (cierra la bd), mensaje de req personalizado
 func (s *server) closeUserData(listData [][]string, listKeys []string, req api.Request, message string) api.Response {
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))
@@ -834,6 +850,8 @@ func (s *server) closeUserData(listData [][]string, listKeys []string, req api.R
 	}
 	return s.closeUserK(listKeys, req, message)
 }
+
+// Sustituye las claves de la bd por las claves de la entrada (cierra la bd), mensaje de req personalizado
 func (s *server) closeUserK(listKeys []string, req api.Request, message string) api.Response {
 	// Encriptar el nombre de usuario para buscar en la base de datos
 	encryptedUsername, err := encrypt(key, []byte(req.Username))

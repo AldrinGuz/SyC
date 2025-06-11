@@ -375,6 +375,7 @@ window.panel = function(tipo){
                 <label for="data">(*)Código de su aplicación authentificadoras:</label>
                 <input class="input" id="data" type="text" autocomplete="off" />
                 <button class="btn" id="2FA" onclick="auth2FA()">Entrar</button>
+                <button class="btn" onclick="panel('login')">Volver</button>
             </div>
             `;
             break;
